@@ -9,6 +9,7 @@ let confirmResolve = null;
 let confirmPreviousFocus = null;
 let voterRefreshFromPush = null;
 let activeVoterCode = '';
+let activeVoterId = '';
 let lastVibrationAt = 0;
 let swRegistrationPromise = null;
 let pushPermissionPromise = null;
@@ -28,6 +29,22 @@ const PRESENCE_CACHE = 'cabanavot-presence';
 const PRESENCE_KEY = '/__voter-visible';
 let voterPresenceTimer = null;
 let voterPresenceOn = false;
+let lastServerPresenceAt = 0;
+
+// Anunță serverul că votantul are pagina de vot în față. Serverul nu mai
+// trimite push către el, deci nu poate apărea notificare de sistem peste vot —
+// indiferent de versiunea de service worker din telefon.
+function reportVoterPresence(active) {
+  if (!activeVoterCode || !activeVoterId) return;
+  try {
+    fetch(API + '/api/presence', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: activeVoterCode, voterId: activeVoterId, active: !!active }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+}
 
 async function writeVoterPresence(visible) {
   if (!('caches' in window)) return;
@@ -43,11 +60,18 @@ async function writeVoterPresence(visible) {
 
 function startVoterPresence() {
   voterPresenceOn = true;
+  lastServerPresenceAt = Date.now();
   writeVoterPresence(document.visibilityState === 'visible');
+  reportVoterPresence(true);
   closeSystemNotifications();
   clearInterval(voterPresenceTimer);
   voterPresenceTimer = setInterval(() => {
-    writeVoterPresence(document.visibilityState === 'visible');
+    const visible = document.visibilityState === 'visible';
+    writeVoterPresence(visible);
+    if (visible && Date.now() - lastServerPresenceAt > 12000) {
+      lastServerPresenceAt = Date.now();
+      reportVoterPresence(true);
+    }
   }, 8000);
 }
 
@@ -66,13 +90,14 @@ function stopVoterPresence() {
   clearInterval(voterPresenceTimer);
   voterPresenceTimer = null;
   writeVoterPresence(false);
+  reportVoterPresence(false);
 }
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return Promise.resolve(null);
   if (!swRegistrationPromise) {
     swRegistrationPromise = navigator.serviceWorker
-      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .register('/sw.js?v=45', { scope: '/', updateViaCache: 'none' })
       .catch((e) => { console.warn('Service worker indisponibil:', e); return null; });
   }
   return swRegistrationPromise;
@@ -302,6 +327,7 @@ function route() {
   hideVoterAlert();
   voterRefreshFromPush = null;
   activeVoterCode = '';
+  activeVoterId = '';
   const h = location.hash || '#/';
   // Meniul mobil se inchide la fiecare schimbare de pagina.
   const nav = $('#mainNav');
@@ -640,6 +666,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
   }
 
   activeVoterCode = code;
+  activeVoterId = voterId;
   startVoterPresence();
   voterRefreshFromPush = () => refresh({ silent: true, force: true });
   setupVoterPush(code, voterId).catch((e) => console.warn('Notificari:', e));
@@ -1320,10 +1347,13 @@ async function renderControl(id) {
       try {
         const r = await api('/api/sessions/' + id + '/notify', { method: 'POST', body: JSON.stringify({}) });
         const detalii = [];
+        if (r.active) detalii.push(`${r.active} votant${r.active === 1 ? '' : 'i'} chiar pe pagina de vot (fără notificare de sistem)`);
         if (r.failed) detalii.push(`${r.failed} dispozitiv${r.failed === 1 ? '' : 'e'} eșuat${r.failed === 1 ? '' : 'e'}`);
         if (r.removed) detalii.push(`${r.removed} dispozitiv${r.removed === 1 ? '' : 'e'} scos din listă`);
         if (r.sentVoters > 0) {
           toast(`Notificare trimisă la ${r.sentVoters} votant${r.sentVoters === 1 ? '' : 'i'}${detalii.length ? ` (${detalii.join(', ')})` : ''}.`);
+        } else if (r.active > 0 && !r.eligible) {
+          toast(`${r.active} votant${r.active === 1 ? '' : 'i'} fără vot ${r.active === 1 ? 'este' : 'sunt'} chiar pe pagina de vot — vede${r.active === 1 ? '' : 'au'} întrebarea, așa că nu li s-a trimis notificare de sistem.`);
         } else if (r.eligible > 0) {
           toast(`Notificarea NU a putut fi trimisă${detalii.length ? `: ${detalii.join(', ')}` : ''}. Încearcă din nou.`);
         } else {
@@ -1515,7 +1545,9 @@ document.addEventListener('visibilitychange', () => {
   if (!voterPresenceOn) return;
   const visible = document.visibilityState === 'visible';
   writeVoterPresence(visible);
+  reportVoterPresence(visible);
   if (visible) closeSystemNotifications();
+  else lastServerPresenceAt = 0;
 });
 if ($('#voterAlertClose')) $('#voterAlertClose').onclick = hideVoterAlert;
 if ($('#voterAlertAction')) $('#voterAlertAction').onclick = () => {
