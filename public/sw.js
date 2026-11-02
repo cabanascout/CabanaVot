@@ -9,6 +9,26 @@ function payloadFrom(event) {
   try { return event.data.json(); } catch { return { body: event.data.text() }; }
 }
 
+// Pagina de vot scrie periodic un marcaj în Cache API cât timp e vizibilă.
+// Îl citim ca plasă de siguranță pentru browser-ele unde `visibilityState`
+// din `clients.matchAll` nu e de încredere.
+async function voterVisibleRecently(sessionCode) {
+  try {
+    const cache = await caches.open('cabanavot-presence');
+    const res = await cache.match('/__voter-visible');
+    if (!res) return false;
+    let info = {};
+    try { info = JSON.parse(await res.text()) || {}; } catch {}
+    const at = Number(info.at) || 0;
+    if (Date.now() - at > 45000) return false;
+    const code = String(info.code || '').toUpperCase();
+    if (sessionCode && code && code !== sessionCode) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 self.addEventListener('push', (event) => {
   const data = payloadFrom(event);
   const kind = data.type === 'manual' ? 'manual' : 'question';
@@ -59,7 +79,7 @@ self.addEventListener('push', (event) => {
       if (!client.url.toUpperCase().includes('COD=')) return true;
       if (!sessionCode) return true;
       return client.url.toUpperCase().includes('COD=' + sessionCode);
-    });
+    }) || await voterVisibleRecently(sessionCode);
     if (voterPageVisible) {
       await self.registration.getNotifications({ tag: options.tag }).then((existing) => {
         existing.forEach((n) => { try { n.close(); } catch {} });

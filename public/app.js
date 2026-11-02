@@ -20,6 +20,43 @@ let lastAlertKey = '';
 
 function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
+// „Semn de prezență" pentru service worker. Cât timp votantul are pagina de vot
+// în față, scriem periodic un marcaj în Cache API; la un push, worker-ul îl
+// citește și NU mai afișează notificarea de sistem (rămâne doar pop-up-ul din
+// site). Marcajul se șterge imediat când pagina trece în fundal sau se schimbă.
+const PRESENCE_CACHE = 'cabanavot-presence';
+const PRESENCE_KEY = '/__voter-visible';
+let voterPresenceTimer = null;
+let voterPresenceOn = false;
+
+async function writeVoterPresence(visible) {
+  if (!('caches' in window)) return;
+  try {
+    const cache = await caches.open(PRESENCE_CACHE);
+    if (visible) {
+      await cache.put(PRESENCE_KEY, new Response(JSON.stringify({ code: activeVoterCode, at: Date.now() })));
+    } else {
+      await cache.delete(PRESENCE_KEY);
+    }
+  } catch {}
+}
+
+function startVoterPresence() {
+  voterPresenceOn = true;
+  writeVoterPresence(document.visibilityState === 'visible');
+  clearInterval(voterPresenceTimer);
+  voterPresenceTimer = setInterval(() => {
+    writeVoterPresence(document.visibilityState === 'visible');
+  }, 8000);
+}
+
+function stopVoterPresence() {
+  voterPresenceOn = false;
+  clearInterval(voterPresenceTimer);
+  voterPresenceTimer = null;
+  writeVoterPresence(false);
+}
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return Promise.resolve(null);
   if (!swRegistrationPromise) {
@@ -250,6 +287,7 @@ document.addEventListener('click', (e) => {
 
 function route() {
   stopPoll();
+  stopVoterPresence();
   hideVoterAlert();
   voterRefreshFromPush = null;
   activeVoterCode = '';
@@ -452,13 +490,10 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
 
   function questionMarkup(s) {
     const c = s.current;
-    const qNo = (s.currentIndex ?? 0) + 1;
     return `<div class="card vote-card">
       <div class="vote-meta">
         ${statusPill('live')}
-        <span class="tiny muted">Întrebarea ${qNo} din ${s.questionsCount}</span>
       </div>
-      ${s.quorumEnabled ? `<p class="tiny muted vote-quorum">Cvorum 2/3: înregistrați ${s.registered} din necesarul ${s.quorumNeeded}.</p>` : ''}
       <p class="current-title">${esc(c.title)}</p>
       <div class="vote-options">
         ${c.options.map((o, i) => `<button type="button" class="vote-btn" data-i="${i}" aria-pressed="false">
@@ -475,7 +510,6 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
   function showQuestion(s) {
     const isNewQuestion = (state.questionId && state.questionId !== s.current.id)
       || state.status === 'draft' || state.status === 'waiting' || state.status === 'voted';
-    const qNo = (s.currentIndex ?? 0) + 1;
     state.status = 'live';
     state.questionId = s.current.id;
     state.questionSig = questionSignature(s.current);
@@ -485,7 +519,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
       showVoterAlert({
         kind: 'question',
         title: 'Întrebare nouă',
-        body: `Întrebarea ${qNo} din ${s.questionsCount}: „${s.current.title}”`,
+        body: `„${s.current.title}”`,
         key: 'q:' + s.current.id,
       });
     }
@@ -566,10 +600,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
         return;
       }
       // Aceeași întrebare: nu rescriem cardul, ca să nu pierdem varianta aleasă.
-      if (s.quorumEnabled) {
-        const q = $('.vote-quorum');
-        if (q) q.textContent = `Cvorum 2/3: înregistrați ${s.registered} din necesarul ${s.quorumNeeded}.`;
-      }
+      // (Cvorumul nu se mai afișează votanților — îl vede doar creatorul.)
     } catch (e) {
       if (!document.body.contains(stage)) return;
       if (/nu exista|nu a fost gasita/i.test(e.message)) {
@@ -598,6 +629,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
   }
 
   activeVoterCode = code;
+  startVoterPresence();
   voterRefreshFromPush = () => refresh({ silent: true, force: true });
   setupVoterPush(code, voterId).catch((e) => console.warn('Notificari:', e));
   refresh();
@@ -1466,6 +1498,12 @@ registerServiceWorker();
 // butoanele pop-up-ului o singură dată.
 document.addEventListener('pointerdown', primeAudio, { passive: true });
 document.addEventListener('keydown', primeAudio);
+// Când votantul iese din aplicație / blochează ecranul, semnul de prezență
+// dispare imediat, ca notificarea de sistem să apară normal.
+document.addEventListener('visibilitychange', () => {
+  if (!voterPresenceOn) return;
+  writeVoterPresence(document.visibilityState === 'visible');
+});
 if ($('#voterAlertClose')) $('#voterAlertClose').onclick = hideVoterAlert;
 if ($('#voterAlertAction')) $('#voterAlertAction').onclick = () => {
   const action = alertAction;
