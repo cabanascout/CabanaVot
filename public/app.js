@@ -630,6 +630,22 @@ function requestPushPermission() {
   return pushPermissionPromise;
 }
 
+// Cheia publică cu care site-ul SEMNEAZĂ fiecare push. Dacă browserul are un
+// abonament vechi, făcut cu alte chei (ex: Netlify, înainte de migrare), FCM
+// îl respinge cu 403 — aici comparăm cheile și ne reabonăm când nu se potrivesc.
+function applicationServerKeyMatches(sub, publicKey) {
+  try {
+    const raw = sub && sub.options && sub.options.applicationServerKey;
+    if (!raw) return false; // nu putem verifica → reabonăm ca să fim siguri
+    const u8 = raw instanceof ArrayBuffer ? new Uint8Array(raw) : new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+    const b64 = btoa(String.fromCharCode.apply(null, Array.from(u8)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return b64 === publicKey;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureVoterPush(code, voterId) {
   if (!pushSupported() || Notification.permission !== 'granted') return false;
   try {
@@ -639,9 +655,15 @@ async function ensureVoterPush(code, voterId) {
       12000,
       'Service worker indisponibil.',
     );
+    // Cheia publică actuală, mereu: semnătura și abonarea trebuie să folosească ACEEAȘI cheie.
+    const { publicKey } = await api('/api/push/public-key');
     let sub = await reg.pushManager.getSubscription();
+    if (sub && !applicationServerKeyMatches(sub, publicKey)) {
+      // Abonament moștenit cu alte chei — ne reabonăm acum.
+      try { await sub.unsubscribe(); } catch {}
+      sub = null;
+    }
     if (!sub) {
-      const { publicKey } = await api('/api/push/public-key');
       sub = await withTimeout(
         reg.pushManager.subscribe({
           userVisibleOnly: true,
@@ -1248,12 +1270,15 @@ async function renderControl(id) {
       paint();
       try {
         const r = await api('/api/sessions/' + id + '/notify', { method: 'POST', body: JSON.stringify({}) });
+        const detalii = [];
+        if (r.failed) detalii.push(`${r.failed} dispozitiv${r.failed === 1 ? '' : 'e'} eșuat${r.failed === 1 ? '' : 'e'}`);
+        if (r.removed) detalii.push(`${r.removed} dispozitiv${r.removed === 1 ? '' : 'e'} scos din listă`);
         if (r.sentVoters > 0) {
-          toast(`Notificare trimisă la ${r.sentVoters} votant${r.sentVoters === 1 ? '' : 'i'}${r.failed ? ` (${r.failed} dispozitive au eșuat)` : ''}.`);
+          toast(`Notificare trimisă la ${r.sentVoters} votant${r.sentVoters === 1 ? '' : 'i'}${detalii.length ? ` (${detalii.join(', ')})` : ''}.`);
         } else if (r.eligible > 0) {
-          toast('Notificarea nu a putut fi trimisă. Încearcă din nou.');
+          toast(`Notificarea NU a putut fi trimisă${detalii.length ? `: ${detalii.join(', ')}` : ''}. Încearcă din nou.`);
         } else {
-          toast('Niciun votant cu notificările activate nu așteaptă un răspuns.');
+          toast('Niciun votant care nu a votat are notificările activate (adresa de acord apare la intrarea în sesiune).');
         }
       } catch (e) {
         toast(e.message);
