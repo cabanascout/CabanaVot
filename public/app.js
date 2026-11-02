@@ -1048,7 +1048,7 @@ async function renderControl(id) {
             </div>
             ${isOwner && s.status === 'live' && cur ? `<div class="control-notify">
               <button type="button" class="btn btn-subtle btn-small" id="cNotify" title="Trimite o notificare votanților care nu au răspuns la întrebarea curentă" ${notifying ? 'disabled' : ''}>${notifying ? 'Se trimite…' : '🔔 Notifică pe cei care nu au votat'}</button>
-              <span class="tiny muted">${pushPending ? `${pushPending} votant${pushPending === 1 ? '' : 'i'} cu notificări active nu au răspuns încă.` : 'Doar cei cu notificările activate primesc notificarea.'}</span>
+              <span class="tiny muted">${pushPending ? `${pushPending} votant${pushPending === 1 ? '' : 'i'} cu notificări active ${pushPending === 1 ? 'nu a răspuns' : 'nu au răspuns'} încă.` : 'Doar cei cu notificările activate primesc notificarea.'}</span>
             </div>` : ''}
           </div>
           ${!isOwner ? '<p class="tiny muted">Vezi acest panou pentru că ești pe linkul de admin. Doar creatorul (' + esc(s.ownerEmail) + ') poate controla efectiv sesiunea.</p>' : ''}

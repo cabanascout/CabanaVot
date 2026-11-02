@@ -2,7 +2,7 @@
    true  = site-ul public afișează ecranul „Site-ul este în mentenanță”;
    false = site-ul funcționează normal.
    Se modifică doar cât timp se lucrează efectiv la site, apoi se pune la loc false. */
-window.CABANAVOT_MAINTENANCE = true;
+window.CABANAVOT_MAINTENANCE = false;
 
 (function () {
   // Pe calculatorul de dezvoltare lăsăm site-ul normal, ca să putem testa.
