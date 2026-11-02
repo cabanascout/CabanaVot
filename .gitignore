@@ -12,3 +12,6 @@ Indicatii.txt
 .DS_Store
 *.log
 cabanavot/tmp-*
+
+# poze locale (nu fac parte din site)
+Notificare*.jpeg
