@@ -370,7 +370,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
         <p>Verificăm sesiunea și pregătim votul.</p>
       </div>
     </div>
-    <p class="voter-auto tiny muted"><span class="pulse-dot" aria-hidden="true"></span> Se actualizează automat la 5 secunde.</p>
+    <p class="voter-auto tiny muted" hidden></p>
   </section>`;
   $('#vChangeCode').onclick = () => { stopPoll(); location.hash = '#/voteaza'; };
 
@@ -394,7 +394,11 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
   function setAutoStatus(text, isError = false) {
     const el = $('.voter-auto');
     if (!el) return;
-    el.innerHTML = `<span class="pulse-dot${isError ? ' error' : ''}" aria-hidden="true"></span> ${esc(text)}`;
+    // Textul „se actualizează automat” nu se mai afișează niciodată;
+    // bara rămâne invizibilă și apare doar pentru o eroare de conexiune.
+    if (!isError) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = `<span class="pulse-dot error" aria-hidden="true"></span> ${esc(text)}`;
   }
 
   function updateHeader(s) {
@@ -417,8 +421,8 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
     if (kind === 'voted') {
       return `<div class="waiting-card">
         <div class="waiting-icon waiting-icon-ok">✓</div>
-        <h3>Răspuns trimis</h3>
-        <p>Răspunsul tău a fost înregistrat anonim. Așteaptă următoarea întrebare — pagina se actualizează automat.</p>
+        <h3>Vot trimis</h3>
+        <p>Așteaptă următoarea întrebare.</p>
         <div class="waiting-dots" aria-hidden="true"><span></span><span></span><span></span></div>
       </div>`;
     }
@@ -433,7 +437,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
     return `<div class="waiting-card">
       <div class="waiting-icon">⏳</div>
       <h3>Așteptăm următoarea întrebare</h3>
-      <p>Administratorul pregătește următoarea întrebare. Pagina se actualizează automat.</p>
+      <p>Administratorul pregătește următoarea întrebare.</p>
       <div class="waiting-dots" aria-hidden="true"><span></span><span></span><span></span></div>
     </div>`;
   }
@@ -464,8 +468,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
         </button>`).join('')}
       </div>
       <button type="button" class="btn vote-submit" id="vSubmit" disabled>TRIMITE</button>
-      <p class="tiny muted vote-hint" id="vHint">Alege o variantă, apoi apasă <strong>TRIMITE</strong>. Răspunsul se înregistrează doar atunci.</p>
-      <p class="tiny muted vote-total">Total voturi aici: <strong id="vTotal">${c.total}</strong></p>
+      <p class="tiny muted vote-hint" id="vHint">Alege o variantă, apoi apasă <strong>TRIMITE</strong>.</p>
     </div>`;
   }
 
@@ -498,7 +501,8 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
           x.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
         submit.disabled = false;
-        hint.innerHTML = 'Ai ales o variantă. Apasă <strong>TRIMITE</strong> ca să o înregistrezi.';
+        // Fără text suplimentar după alegere: butonul TRIMITE devenit activ spune tot.
+        hint.hidden = true;
       };
     });
     submit.onclick = async () => {
@@ -509,7 +513,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
       submit.textContent = 'SE TRIMITE…';
       try {
         await api('/api/vote', { method: 'POST', body: JSON.stringify({ code: state.code, questionId: s.current.id, optionIndex: state.selected, voterId: state.voterId }) });
-        toast('Răspuns trimis anonim ✓ Așteaptă următoarea întrebare.');
+        toast('Vot trimis');
         state.submitting = false;
         showWaiting('voted', { name: $('#vName') ? $('#vName').textContent : '' });
         await refresh({ silent: true, force: true });
@@ -535,7 +539,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
       const s = await api('/api/join/' + encodeURIComponent(state.code) + '?voterId=' + encodeURIComponent(state.voterId), { cache: 'no-store' });
       if (!document.body.contains(stage)) return;
       state.errorShown = false;
-      setAutoStatus('Se actualizează automat la 5 secunde.');
+      setAutoStatus('');
       updateHeader(s);
 
       if (s.status === 'closed') {
@@ -562,8 +566,6 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
         return;
       }
       // Aceeași întrebare: nu rescriem cardul, ca să nu pierdem varianta aleasă.
-      const totalEl = $('#vTotal');
-      if (totalEl) totalEl.textContent = c.total;
       if (s.quorumEnabled) {
         const q = $('.vote-quorum');
         if (q) q.textContent = `Cvorum 2/3: înregistrați ${s.registered} din necesarul ${s.quorumNeeded}.`;
