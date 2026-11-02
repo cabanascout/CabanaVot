@@ -55,10 +55,17 @@ self.addEventListener('push', (event) => {
     const voterPageVisible = clients.some((client) => {
       if (client.visibilityState !== 'visible') return false;
       if (!client.url.includes('#/voteaza')) return false;
+      // Tab de vot fără cod în adresă (ecranul de introducere): suprimăm mereu.
+      if (!client.url.toUpperCase().includes('COD=')) return true;
       if (!sessionCode) return true;
       return client.url.toUpperCase().includes('COD=' + sessionCode);
     });
-    if (voterPageVisible) return;
+    if (voterPageVisible) {
+      await self.registration.getNotifications({ tag: options.tag }).then((existing) => {
+        existing.forEach((n) => { try { n.close(); } catch {} });
+      });
+      return;
+    }
 
     await self.registration.showNotification(title, options);
   })());

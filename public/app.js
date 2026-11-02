@@ -798,6 +798,10 @@ async function handlePushConsentYes() {
 }
 
 async function setupVoterPush(code, voterId) {
+  // La fiecare intrare în sesiune facem browserul să verifice dacă există o
+  // versiune mai nouă de service worker (regula „fără notificare de sistem
+  // când pagina de vot e vizibilă” trebuie să fie mereu cea activă).
+  registerServiceWorker().then((r) => { if (r && r.update) r.update().catch(() => {}); });
   if (!pushSupported()) {
     showPushUnsupportedHint();
     return;
