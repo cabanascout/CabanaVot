@@ -97,7 +97,7 @@ function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return Promise.resolve(null);
   if (!swRegistrationPromise) {
     swRegistrationPromise = navigator.serviceWorker
-      .register('/sw.js?v=45', { scope: '/', updateViaCache: 'none' })
+      .register('/sw.js?v=46', { scope: '/', updateViaCache: 'none' })
       .catch((e) => { console.warn('Service worker indisponibil:', e); return null; });
   }
   return swRegistrationPromise;
@@ -1347,13 +1347,13 @@ async function renderControl(id) {
       try {
         const r = await api('/api/sessions/' + id + '/notify', { method: 'POST', body: JSON.stringify({}) });
         const detalii = [];
-        if (r.active) detalii.push(`${r.active} votant${r.active === 1 ? '' : 'i'} chiar pe pagina de vot (fără notificare de sistem)`);
         if (r.failed) detalii.push(`${r.failed} dispozitiv${r.failed === 1 ? '' : 'e'} eșuat${r.failed === 1 ? '' : 'e'}`);
         if (r.removed) detalii.push(`${r.removed} dispozitiv${r.removed === 1 ? '' : 'e'} scos din listă`);
         if (r.sentVoters > 0) {
           toast(`Notificare trimisă la ${r.sentVoters} votant${r.sentVoters === 1 ? '' : 'i'}${detalii.length ? ` (${detalii.join(', ')})` : ''}.`);
         } else if (r.active > 0 && !r.eligible) {
-          toast(`${r.active} votant${r.active === 1 ? '' : 'i'} fără vot ${r.active === 1 ? 'este' : 'sunt'} chiar pe pagina de vot — vede${r.active === 1 ? '' : 'au'} întrebarea, așa că nu li s-a trimis notificare de sistem.`);
+          // Toți cei care nu au votat erau deja pe pagina de vot: nu mai
+          // arătăm niciun mesaj despre asta — nu e nimic de trimis.
         } else if (r.eligible > 0) {
           toast(`Notificarea NU a putut fi trimisă${detalii.length ? `: ${detalii.join(', ')}` : ''}. Încearcă din nou.`);
         } else {
@@ -1514,12 +1514,16 @@ if ('serviceWorker' in navigator) {
     if (!activeVoterCode) return;
     if (data.sessionCode && String(data.sessionCode).toUpperCase() !== activeVoterCode) return;
     if (data.kind === 'manual') {
-      showVoterAlert({
-        kind: 'manual',
-        title: data.title || 'Memento de vot',
-        body: data.body || 'Ai o notificare nouă.',
-        key: 'push:' + (data.at || Date.now()),
-      });
+      // Dacă votantul se uită chiar la pagina de vot, memento-ul „votează acum”
+      // nu are rost: nu-i mai arătăm nici pop-up, nici sunet/vibrație.
+      if (document.visibilityState !== 'visible') {
+        showVoterAlert({
+          kind: 'manual',
+          title: data.title || 'Memento de vot',
+          body: data.body || 'Ai o notificare nouă.',
+          key: 'push:' + (data.at || Date.now()),
+        });
+      }
     } else if (data.questionId) {
       // Pop-up-ul pornește imediat; refresh-ul de mai jos nu îl mai repetă,
       // pentru că showQuestion folosește aceeași cheie (id-ul întrebării).
