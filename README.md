@@ -5,6 +5,15 @@ cu design după Manualul de identitate vizuală Cabana Scout v3.0
 (albastru `#0099FF`, bej `#D1C885`, mov închis `#000080`, font Red Hat Display,
 logo oficial extras din manual în `public/logo.png`).
 
+## Actualizări v2.8 (2 nov 2026) — notificări pop-up, sunet și vibrare
+
+- 🔔 Când apare o întrebare nouă sau creatorul trimite un memento, votantul vede un **pop-up mare în pagină**, cu sunet și vibrare. Notificarea de sistem rămâne pentru cazul în care site-ul este închis sau în fundal.
+- 📳 Vibrarea pornește imediat ce întrebarea se schimbă, atât din refresh-ul automat, cât și din notificarea push. Durata și intensitatea au fost mărite.
+- 🤫 A fost scos butonul **„Activează”** și textul explicativ din pagina de vot. Permisiunea de notificări este cerută automat la intrarea în vot; dacă browserul cere obligatoriu o atingere (Safari), este cerută la primul tap. Nu mai există buton de oprire în interfață.
+- 🔕 Pop-up-ul și sunetul funcționează și când notificările push sunt refuzate; pentru notificări cu site-ul închis este nevoie de permisiunea browserului.
+- 📱 **Limitare Apple:** pe iPhone, notificările push către site-ul închis funcționează doar dacă site-ul este adăugat la **ecranul principal** (iOS 16.4+). Nicio pagină web nu poate ocoli această regulă. Cât timp site-ul este deschis, pop-up-ul și sunetul funcționează și în Safari; vibrarea rămâne disponibilă doar pe Android.
+- 🚧 Mentenanța a fost pornită cât timp s-a lucrat la această versiune, apoi oprită după verificarea pe Netlify și Cloudflare.
+
 ## Actualizări v2.7 (2 nov 2026) — notificări push și vibrare
 
 - 🔔 Votanții pot activa notificările o singură dată din pagina de vot, cu butonul **„Activează”**. Primesc notificare când apare o întrebare nouă, **chiar dacă site-ul este închis**.

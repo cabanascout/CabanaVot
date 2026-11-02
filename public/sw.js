@@ -16,34 +16,49 @@ self.addEventListener('push', (event) => {
   const body = data.body || 'Ai o notificare nouă.';
   const url = data.url || '/';
   const sessionCode = String(data.sessionCode || '').toUpperCase();
+  const questionId = String(data.questionId || '');
   const options = {
     body,
     icon: '/logo.png',
     badge: '/logo.png',
     tag: data.tag || (kind === 'manual' ? 'cabanavot-manual-' + Date.now() : 'cabanavot-question'),
     renotify: true,
-    requireInteraction: kind === 'manual',
-    vibrate: kind === 'question' ? [500, 150, 500, 150, 900] : [300, 120, 300, 120, 700],
-    data: { url, kind, sessionCode },
+    // Notificarea rămâne vizibilă și trebuie să iasă ca pop-up, nu doar în bara de stare.
+    requireInteraction: true,
+    silent: false,
+    timestamp: Date.now(),
+    vibrate: kind === 'question' ? [550, 160, 550, 160, 1000] : [350, 120, 350, 120, 800],
+    actions: [{ action: 'vote', title: 'Votează' }],
+    data: { url, kind, sessionCode, questionId },
   };
 
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of clients) {
       try {
-        client.postMessage({ type: 'cabanavot-push', kind, title, body, url, sessionCode });
+        client.postMessage({
+          type: 'cabanavot-push',
+          kind,
+          title,
+          body,
+          url,
+          sessionCode,
+          questionId,
+          at: data.at || Date.now(),
+        });
       } catch {}
     }
 
-    // Dacă votantul are chiar pagina votului deschisă și vizibilă, nu mai
-    // acoperim ecranul cu o notificare de sistem: pagina vibrează și se actualizează.
+    // Dacă votantul are chiar pagina votului deschisă și vizibilă, pop-up-ul
+    // din pagină preia notificarea (și pentru mementoul manual), ca să nu
+    // apară dublu: un pop-up în site plus o notificare de sistem.
     const voterPageVisible = clients.some((client) => {
       if (client.visibilityState !== 'visible') return false;
       if (!client.url.includes('#/voteaza')) return false;
       if (!sessionCode) return true;
       return client.url.toUpperCase().includes('COD=' + sessionCode);
     });
-    if (kind === 'question' && voterPageVisible) return;
+    if (voterPageVisible) return;
 
     await self.registration.showNotification(title, options);
   })());

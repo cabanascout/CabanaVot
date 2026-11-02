@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-<script src="maintenance.js?v=31"></script>
-<link rel="stylesheet" href="styles.css?v=31" />
+<script src="maintenance.js?v=32"></script>
+<link rel="stylesheet" href="styles.css?v=32" />
 <link rel="icon" type="image/png" href="logo.png" />
 <link rel="apple-touch-icon" href="logo.png" />
 <link rel="manifest" href="manifest.json" />
@@ -118,8 +118,19 @@
   </div>
 </div>
 
+<!-- Pop-up pentru notificările de vot (întrebare nouă / memento de la creator) -->
+<div class="voter-alert" id="voterAlert" role="alert" aria-live="assertive" hidden>
+  <div class="voter-alert-icon" id="voterAlertIcon" aria-hidden="true">🔔</div>
+  <div class="voter-alert-copy">
+    <strong id="voterAlertTitle"></strong>
+    <p id="voterAlertBody"></p>
+    <button type="button" class="btn btn-primary btn-small" id="voterAlertAction">Vezi întrebarea</button>
+  </div>
+  <button type="button" class="voter-alert-close" id="voterAlertClose" aria-label="Închide notificarea">×</button>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>

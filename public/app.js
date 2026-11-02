@@ -15,6 +15,12 @@ let voterRefreshFromPush = null;
 let activeVoterCode = '';
 let lastVibrationAt = 0;
 let swRegistrationPromise = null;
+let pushPermissionPromise = null;
+let audioContext = null;
+let lastSoundAt = 0;
+let alertHideTimer = null;
+let alertAction = null;
+let lastAlertKey = '';
 
 function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
@@ -30,11 +36,91 @@ function registerServiceWorker() {
 
 function vibrateStrong() {
   const now = Date.now();
-  if (now - lastVibrationAt < 1800) return; // push + poll pot veni aproape simultan
+  if (now - lastVibrationAt < 1400) return; // push + poll pot veni aproape simultan
   lastVibrationAt = now;
   if (navigator.vibrate) {
-    try { navigator.vibrate([500, 150, 500, 150, 900]); } catch {}
+    try { navigator.vibrate([550, 160, 550, 160, 1000]); } catch {}
   }
+}
+
+// Sunetul si vibrarea trebuie deblocate de o atingere pe iPhone/Android.
+// Creăm contextul audio la prima atingere, apoi îl reluăm dacă browserul l-a suspendat.
+function primeAudio() {
+  try {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return null;
+    if (!audioContext) audioContext = new AudioCtor();
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+    return audioContext;
+  } catch {
+    return null;
+  }
+}
+
+function playAlertSound() {
+  const now = Date.now();
+  if (now - lastSoundAt < 900) return;
+  const ctx = primeAudio();
+  if (!ctx) return;
+  lastSoundAt = now;
+  const play = () => {
+    try {
+      const start = ctx.currentTime + 0.02;
+      // Două note clare, ușor ascendente, ca un clopoțel de notificare.
+      [[880, 0.18], [1174.66, 0.30]].forEach(([freq, duration], i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const at = start + i * 0.20;
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, at);
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(0.22, at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(at);
+        osc.stop(at + duration + 0.03);
+      });
+    } catch {}
+  };
+  if (ctx.state === 'suspended') ctx.resume().then(play).catch(() => {});
+  else play();
+}
+
+function hideVoterAlert() {
+  clearTimeout(alertHideTimer);
+  alertHideTimer = null;
+  alertAction = null;
+  const el = $('#voterAlert');
+  if (!el) return;
+  el.classList.remove('attention');
+  el.hidden = true;
+}
+
+function showVoterAlert({ kind = 'question', title, body, key = '', onAction = null, duration = 12000 } = {}) {
+  const el = $('#voterAlert');
+  if (!el) return;
+  if (key && key === lastAlertKey) return;
+  if (key) lastAlertKey = key;
+  $('#voterAlertIcon').textContent = kind === 'manual' ? '🔔' : '🗳️';
+  $('#voterAlertTitle').textContent = title || (kind === 'manual' ? 'Memento de vot' : 'Întrebare nouă');
+  $('#voterAlertBody').textContent = body || '';
+  alertAction = typeof onAction === 'function' ? onAction : null;
+  el.hidden = false;
+  el.classList.remove('attention');
+  void el.offsetWidth; // repornește animația la fiecare notificare
+  el.classList.add('attention');
+  // Pop-up-ul se vede chiar dacă pagina tocmai a fost readusă în prim-plan.
+  // Sunetul și vibrarea pornesc doar când ecranul este vizibil.
+  if (document.visibilityState === 'visible') {
+    playAlertSound();
+    vibrateStrong();
+  }
+  clearTimeout(alertHideTimer);
+  alertHideTimer = setTimeout(hideVoterAlert, duration);
+}
+
+function currentVoteCard() {
+  return document.querySelector('.vote-card') || document.querySelector('#vStage') || null;
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -168,6 +254,7 @@ document.addEventListener('click', (e) => {
 
 function route() {
   stopPoll();
+  hideVoterAlert();
   voterRefreshFromPush = null;
   activeVoterCode = '';
   const h = location.hash || '#/';
@@ -232,15 +319,21 @@ async function renderJoin() {
     </div>
     <div id="vArea" style="margin-top:14px"></div>
   </section>`;
-  $('#vJoin').onclick = () => joinSession($('#vCode').value.trim().toUpperCase());
-  if (prefill) joinSession(prefill);
+  $('#vJoin').onclick = () => joinSession($('#vCode').value.trim().toUpperCase(), { interactive: true });
+  if (prefill) joinSession(prefill, { interactive: false });
 }
 
-async function joinSession(code) {
+async function joinSession(code, { interactive = false } = {}) {
   code = String(code || '').trim().toUpperCase();
   const area = $('#vArea');
   if (!code) return toast('Scrie codul.');
   if (!area) return;
+  // Cererea de notificări trebuie făcută cât timp click-ul este încă „proaspăt”
+  // (Safari o permite doar ca răspuns direct la atingerea utilizatorului).
+  if (interactive) {
+    primeAudio();
+    requestPushPermission().catch(() => {});
+  }
   stopPoll();
   area.innerHTML = `<div class="waiting-card voter-loading">
     <div class="waiting-icon">⏳</div>
@@ -262,10 +355,11 @@ async function joinSession(code) {
   if (!document.body.contains(area) || !location.hash.startsWith('#/voteaza')) return;
   history.replaceState(null, '', '#/voteaza?cod=' + encodeURIComponent(code));
   toast('Te-ai alăturat anonim sesiunii ' + code);
-  startVoterSession(code, voterId);
+  startVoterSession(code, voterId, { interactive });
 }
 
-function startVoterSession(code, voterId) {
+function startVoterSession(code, voterId, { interactive = false } = {}) {
+  lastAlertKey = '';
   app.innerHTML = `
   <section class="voter-page">
     <div class="voter-top">
@@ -276,7 +370,6 @@ function startVoterSession(code, voterId) {
       </div>
       <button type="button" class="btn btn-ghost btn-small" id="vChangeCode">Schimbă codul</button>
     </div>
-    <div class="voter-push" id="vPushBox" hidden></div>
     <div id="vStage">
       <div class="waiting-card voter-loading">
         <div class="waiting-icon">⏳</div>
@@ -386,12 +479,20 @@ function startVoterSession(code, voterId) {
   function showQuestion(s) {
     const isNewQuestion = (state.questionId && state.questionId !== s.current.id)
       || state.status === 'draft' || state.status === 'waiting' || state.status === 'voted';
+    const qNo = (s.currentIndex ?? 0) + 1;
     state.status = 'live';
     state.questionId = s.current.id;
     state.questionSig = questionSignature(s.current);
     state.selected = null;
     stage.innerHTML = questionMarkup(s);
-    if (isNewQuestion) vibrateStrong();
+    if (isNewQuestion) {
+      showVoterAlert({
+        kind: 'question',
+        title: 'Întrebare nouă',
+        body: `Întrebarea ${qNo} din ${s.questionsCount}: „${s.current.title}”`,
+        key: 'q:' + s.current.id,
+      });
+    }
     const submit = $('#vSubmit');
     const hint = $('#vHint');
     stage.querySelectorAll('.vote-btn').forEach((b) => {
@@ -503,56 +604,54 @@ function startVoterSession(code, voterId) {
 
   activeVoterCode = code;
   voterRefreshFromPush = () => refresh({ silent: true, force: true });
-  setupVoterPush(code, voterId).catch((e) => console.warn('Notificari:', e));
+  setupVoterPush(code, voterId, { interactive }).catch((e) => console.warn('Notificari:', e));
   refresh();
   stopPoll();
   pollTimer = setInterval(() => refresh({ silent: true }), VOTER_POLL_MS);
 }
 
 // ---------- Notificari pe ecranul votantului ----------
-async function setupVoterPush(code, voterId) {
-  const box = $('#vPushBox');
-  if (!box) return;
-  const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+// Votantul nu mai are buton de activare: cerem permisiunea automat la intrarea
+// în vot. Dacă browserul cere obligatoriu o atingere (Safari), o cerem la primul tap.
+function pushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window
+    && 'Notification' in window && window.isSecureContext;
+}
+
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
 
-  if (!supported) {
-    if (isIOS) {
-      box.innerHTML = '<span class="voter-push-note">🔔 Pe iPhone, adaugă site-ul la ecranul principal ca să poți primi notificări.</span>';
-      box.hidden = false;
-    }
-    return;
+function browserNeedsNotificationGesture() {
+  const ua = navigator.userAgent || '';
+  const safariDesktop = /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|OPiOS|Android/i.test(ua);
+  return isIOSDevice() || safariDesktop;
+}
+
+function requestPushPermission() {
+  if (!pushSupported()) return Promise.resolve('unsupported');
+  if (Notification.permission !== 'default') return Promise.resolve(Notification.permission);
+  if (pushPermissionPromise) return pushPermissionPromise;
+  try {
+    pushPermissionPromise = Promise.resolve(Notification.requestPermission())
+      .catch(() => 'default')
+      .finally(() => { pushPermissionPromise = null; });
+  } catch {
+    pushPermissionPromise = Promise.resolve('default');
   }
+  return pushPermissionPromise;
+}
 
-  async function getSubscription() {
-    try {
-      await registerServiceWorker();
-      const reg = await navigator.serviceWorker.ready;
-      return await reg.pushManager.getSubscription();
-    } catch {
-      return null;
-    }
-  }
-
-  async function saveSubscription(subscription) {
-    await api('/api/join/' + encodeURIComponent(code) + '/subscribe', {
-      method: 'POST',
-      body: JSON.stringify({ voterId, subscription: subscription.toJSON() }),
-    });
-  }
-
-  async function enablePush({ interactive = true } = {}) {
-    if (interactive) {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        toast('Notificările nu au fost activate.');
-        await paint();
-        return;
-      }
-    }
+async function ensureVoterPush(code, voterId) {
+  if (!pushSupported() || Notification.permission !== 'granted') return false;
+  try {
     await registerServiceWorker();
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await withTimeout(
+      navigator.serviceWorker.ready,
+      12000,
+      'Service worker indisponibil.',
+    );
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       const { publicKey } = await api('/api/push/public-key');
@@ -562,63 +661,52 @@ async function setupVoterPush(code, voterId) {
           applicationServerKey: urlBase64ToUint8Array(publicKey),
         }),
         15000,
-        'Browserul nu a putut crea abonamentul pentru notificări. Încearcă din nou.',
+        'Browserul nu a putut crea abonamentul pentru notificări.',
       );
     }
-    await saveSubscription(sub);
-    if (interactive) {
-      vibrateStrong();
-      toast('Notificări activate 🔔');
-    }
-    await paint();
+    await api('/api/join/' + encodeURIComponent(code) + '/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ voterId, subscription: sub.toJSON() }),
+    });
+    return true;
+  } catch (e) {
+    console.warn('Notificările push nu au putut fi activate:', e);
+    return false;
   }
+}
 
-  async function disablePush() {
-    const reg = await registerServiceWorker();
-    const subscription = reg ? await reg.pushManager.getSubscription() : null;
-    if (subscription) {
-      const endpoint = subscription.endpoint;
-      try { await subscription.unsubscribe(); } catch {}
-      try {
-        await api('/api/join/' + encodeURIComponent(code) + '/unsubscribe', {
-          method: 'POST',
-          body: JSON.stringify({ endpoint }),
-        });
-      } catch {}
-    }
-    toast('Notificările au fost oprite.');
-    await paint();
+function askPermissionOnNextGesture(code, voterId) {
+  let done = false;
+  const ask = async () => {
+    if (done) return;
+    done = true;
+    document.removeEventListener('pointerdown', ask, true);
+    document.removeEventListener('keydown', ask, true);
+    if (activeVoterCode !== code) return;
+    const permission = await requestPushPermission();
+    if (permission === 'granted') await ensureVoterPush(code, voterId);
+  };
+  document.addEventListener('pointerdown', ask, true);
+  document.addEventListener('keydown', ask, true);
+}
+
+async function setupVoterPush(code, voterId, { interactive = false } = {}) {
+  if (!pushSupported()) return;
+  if (Notification.permission === 'granted') {
+    await ensureVoterPush(code, voterId);
+    return;
   }
-
-  async function paint() {
-    const sub = await getSubscription();
-    if (Notification.permission === 'granted' && sub) {
-      // Dacă e deja abonat, îl înregistrăm și pentru sesiunea curentă (alt cod).
-      try { await saveSubscription(sub); } catch {}
-      box.innerHTML = '<span class="voter-push-note">🔔 Notificări active</span><button type="button" class="btn btn-subtle btn-small" id="vPushOff">Oprește</button>';
-      box.hidden = false;
-      const off = $('#vPushOff');
-      if (off) off.onclick = disablePush;
+  if (Notification.permission === 'denied') return;
+  if (interactive || !browserNeedsNotificationGesture()) {
+    const permission = await requestPushPermission();
+    if (permission === 'granted') {
+      await ensureVoterPush(code, voterId);
       return;
     }
-    if (Notification.permission === 'denied') {
-      box.innerHTML = '<span class="voter-push-note muted">🔕 Notificările sunt blocate din setările browserului.</span>';
-      box.hidden = false;
-      return;
-    }
-    box.innerHTML = '<span class="voter-push-note">🔔 Activează notificările ca să te anunțăm când apare o întrebare nouă, chiar dacă ai închis site-ul.</span><button type="button" class="btn btn-subtle btn-small" id="vPushOn">Activează</button>';
-    box.hidden = false;
-    const on = $('#vPushOn');
-    if (on) on.onclick = async () => {
-      on.disabled = true;
-      try { await enablePush(); }
-      catch (e) { toast(e.message || 'Nu am putut activa notificările.'); await paint(); }
-    };
+    if (permission === 'denied') return;
   }
-
-  // Dacă permisiunea e deja acordată, dar abonamentul lipsește, nu forțăm
-  // subscribe la încărcare (poate bloca pagina); îi arătăm butonul.
-  await paint();
+  // Încă nu avem permisiune (sau browserul cere un gest): cerem la primul tap.
+  askPermissionOnNextGesture(code, voterId);
 }
 
 // ---------- Formular creare / editare ----------
@@ -1232,8 +1320,8 @@ document.addEventListener('wheel', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'number') e.target.blur();
 }, { passive: true });
 
-// Mesajele venite prin service worker (push) declanșează vibrarea și, dacă
-// suntem pe ecranul de vot, o reîmprospătare imediată a întrebării.
+// Mesajele venite prin service worker (push) arată pop-up-ul în pagină,
+// declanșează sunetul/vibrarea și reîmprospătează imediat întrebarea.
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (event) => {
     const data = event.data || {};
@@ -1241,11 +1329,41 @@ if ('serviceWorker' in navigator) {
     if (data.type !== 'cabanavot-push') return;
     if (!activeVoterCode) return;
     if (data.sessionCode && String(data.sessionCode).toUpperCase() !== activeVoterCode) return;
-    vibrateStrong();
+    if (data.kind === 'manual') {
+      showVoterAlert({
+        kind: 'manual',
+        title: data.title || 'Memento de vot',
+        body: data.body || 'Ai o notificare nouă.',
+        key: 'push:' + (data.at || Date.now()),
+      });
+    } else if (data.questionId) {
+      // Pop-up-ul pornește imediat; refresh-ul de mai jos nu îl mai repetă,
+      // pentru că showQuestion folosește aceeași cheie (id-ul întrebării).
+      showVoterAlert({
+        kind: 'question',
+        title: data.title || 'Întrebare nouă',
+        body: data.body || 'A apărut o întrebare nouă.',
+        key: 'q:' + data.questionId,
+      });
+    }
     if (typeof voterRefreshFromPush === 'function') voterRefreshFromPush();
   });
 }
 registerServiceWorker();
+
+// Deblocăm sunetul la prima atingere (necesar pe iPhone/Android) și legăm
+// butoanele pop-up-ului o singură dată.
+document.addEventListener('pointerdown', primeAudio, { passive: true });
+document.addEventListener('keydown', primeAudio);
+if ($('#voterAlertClose')) $('#voterAlertClose').onclick = hideVoterAlert;
+if ($('#voterAlertAction')) $('#voterAlertAction').onclick = () => {
+  const action = alertAction;
+  hideVoterAlert();
+  if (action) { try { action(); } catch {} return; }
+  const card = currentVoteCard();
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  else window.scrollTo({ top: 0, behavior: 'smooth' });
+};
 
 refreshHeader();
 closeLoginModal(); // plasă de siguranță: modalurile pornesc închise chiar dacă CSS-ul e încă în cache

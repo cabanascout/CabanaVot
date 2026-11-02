@@ -237,9 +237,24 @@ body.dragging-active{cursor:grabbing;user-select:none}
 .voter-code{display:inline-block;margin-top:7px;background:var(--bej-deschis);border:1.5px solid var(--bej);border-radius:999px;padding:4px 10px;font-size:.76rem;font-weight:900;letter-spacing:.13em;color:var(--mov)}
 .voter-auto{display:flex;align-items:center;justify-content:center;gap:7px;margin:14px 0 0;text-align:center}
 /* Notificările votantului: discret, dar vizibil înainte de prima întrebare. */
-.voter-push{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin:0 auto 14px;padding:8px 10px;background:rgba(255,255,255,.78);border:1px dashed rgba(0,0,128,.24);border-radius:12px;max-width:760px}
-.voter-push-note{font-size:.8rem;line-height:1.35;color:var(--muted);max-width:580px}
-.voter-push .btn{flex:0 0 auto}
+/* Pop-up de notificare, vizibil peste pagina de vot. */
+.voter-alert{position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));z-index:80;display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:#fff;border:2px solid var(--albastru);border-left:6px solid var(--albastru);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,128,.30);animation:voter-alert-in .26s ease-out}
+.voter-alert.attention{animation:voter-alert-in .26s ease-out,voter-alert-shake .5s ease-in-out .32s}
+.voter-alert-icon{flex:0 0 42px;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#EAF7FF,#F4EEDA);border:2px solid rgba(0,153,255,.22);font-size:1.25rem}
+.voter-alert-copy{flex:1;min-width:0}
+.voter-alert-copy strong{display:block;color:var(--mov);font-size:1.02rem;line-height:1.25}
+.voter-alert-copy p{margin:4px 0 10px;color:var(--muted);font-size:.9rem;line-height:1.4;overflow-wrap:anywhere}
+.voter-alert-copy .btn{padding:7px 12px;font-size:.82rem}
+.voter-alert-close{flex:0 0 auto;width:32px;height:32px;border-radius:50%;border:0;background:#F4EEDA;color:var(--mov);font-size:1.2rem;line-height:1;cursor:pointer}
+.voter-alert-close:hover{background:var(--mov);color:#fff}
+@keyframes voter-alert-in{from{opacity:0;transform:translate(-50%,-14px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes voter-alert-shake{0%,100%{margin-left:0}20%{margin-left:-5px}40%{margin-left:5px}60%{margin-left:-3px}80%{margin-left:3px}}
+@media(max-width:520px){
+  .voter-alert{top:8px;padding:12px;gap:9px}
+  .voter-alert-icon{flex-basis:36px;width:36px;height:36px;font-size:1.05rem}
+  .voter-alert-copy strong{font-size:.95rem}
+  .voter-alert-copy p{font-size:.84rem}
+}
 .control-notify{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 .control-notify .tiny{max-width:620px;line-height:1.35}
 .pulse-dot{width:7px;height:7px;border-radius:50%;background:var(--albastru);box-shadow:0 0 0 0 rgba(0,153,255,.35);animation:voter-pulse 1.8s ease-out infinite;flex:0 0 auto}
