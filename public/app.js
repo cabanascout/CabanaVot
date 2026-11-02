@@ -1120,7 +1120,7 @@ async function renderControl(id) {
           <details data-dkey="root" ${openAttr('root', true)}><summary>📁 ${esc(s.name)} (${s.questions.length} întrebări)</summary>
             <div style="padding:8px">
             ${s.questions.map((q, i) => `<details data-dkey="q${i}" ${openAttr('q' + i, i === s.currentIndex)}><summary class="${i === s.currentIndex ? 'live-q' : ''}">${i === s.currentIndex ? '▶ ' : ''}${i + 1}. ${esc(q.title)} (${q.total})</summary>
-              <div class="tree-opts">${barsHTML(q)}<button class="btn btn-ghost btn-small" data-goto="${i}">Mergi la această întrebare</button></div></details>`).join('')}
+              <div class="tree-opts">${barsHTML(q)}${s.status !== 'closed' && i > s.currentIndex ? `<button class="btn btn-ghost btn-small" data-goto="${i}">Mergi la această întrebare</button>` : ''}</div></details>`).join('')}
             </div>
           </details>
         </div>
@@ -1131,7 +1131,9 @@ async function renderControl(id) {
             <p class="current-title">${esc(cur.title)}</p>${barsHTML(cur)}` : '<p>Nu există întrebare curentă.</p>'}
             <div class="row" style="margin-top:12px">
               ${s.status === 'draft' ? '<button class="btn btn-primary" id="cStart">▶ Pornește votul</button>' : ''}
-              ${s.status === 'live' ? `<button class="btn btn-ghost btn-small" id="cPrev">← Precedenta</button>${isLast ? '' : '<button class="btn btn-primary btn-small" id="cNext">Următoarea →</button>'}<button class="btn btn-danger btn-small" id="cClose">■ Închide sesiunea</button>` : ''}
+              ${s.status === 'live' ? (isLast
+                ? '<button class="btn btn-danger btn-small" id="cClose">■ Închide sesiunea</button>'
+                : '<button class="btn btn-primary btn-small" id="cNext">Următoarea →</button>') : ''}
               <a class="btn btn-ghost btn-small" href="#/editeaza/${s.id}" data-nav>Editează întrebări</a>
             </div>
             ${isOwner && s.status === 'live' && cur ? `<div class="control-notify">
@@ -1151,7 +1153,6 @@ async function renderControl(id) {
     const ctl = async (body) => { try { s = await api('/api/sessions/' + id + '/control', { method: 'POST', body: JSON.stringify(body) }); paint(); } catch (e) { toast(e.message); } };
     if ($('#cStart')) $('#cStart').onclick = () => ctl({ action: 'start' });
     if ($('#cNext')) $('#cNext').onclick = () => ctl({ action: 'next' });
-    if ($('#cPrev')) $('#cPrev').onclick = () => ctl({ action: 'prev' });
     if ($('#cClose')) $('#cClose').onclick = async () => {
       const ok = await askConfirm({
         title: 'Închizi sesiunea?',

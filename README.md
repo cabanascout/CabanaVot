@@ -12,6 +12,8 @@ logo oficial extras din manual în `public/logo.png`).
 - 🤫 A fost scos butonul **„Activează”** și textul explicativ din pagina de vot. Permisiunea de notificări este cerută automat la intrarea în vot; dacă browserul cere obligatoriu o atingere (Safari), este cerută la primul tap. Nu mai există buton de oprire în interfață.
 - 🔕 Pop-up-ul și sunetul funcționează și când notificările push sunt refuzate; pentru notificări cu site-ul închis este nevoie de permisiunea browserului.
 - 📱 **Limitare Apple:** pe iPhone, notificările push către site-ul închis funcționează doar dacă site-ul este adăugat la **ecranul principal** (iOS 16.4+). Nicio pagină web nu poate ocoli această regulă. Cât timp site-ul este deschis, pop-up-ul și sunetul funcționează și în Safari; vibrarea rămâne disponibilă doar pe Android.
+- ⏭️ Administratorul nu mai poate reveni la o întrebare anterioară: butonul **„← Precedenta”** a fost scos, iar API-ul refuză acțiunile `prev` și `goto` către un index din trecut. Se poate merge doar înainte.
+- ✅ Butonul **„■ Închide sesiunea”** apare doar când administratorul a ajuns la ultima întrebare; până atunci se vede doar **„Următoarea →”**.
 - 🚧 Mentenanța a fost pornită cât timp s-a lucrat la această versiune, apoi oprită după verificarea pe Netlify și Cloudflare.
 
 ## Actualizări v2.7 (2 nov 2026) — notificări push și vibrare
