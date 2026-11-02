@@ -324,12 +324,9 @@ async function joinSession(code, { interactive = false } = {}) {
   const area = $('#vArea');
   if (!code) return toast('Scrie codul.');
   if (!area) return;
-  // Cererea de notificări trebuie făcută cât timp click-ul este încă „proaspăt”
-  // (Safari o permite doar ca răspuns direct la atingerea utilizatorului).
-  if (interactive) {
-    primeAudio();
-    requestPushPermission().catch(() => {});
-  }
+  // Deblocăm sunetul cât timp click-ul este încă „proaspăt”. Permisiunea de
+  // notificări se cere ulterior, doar după fereastra de acord din site.
+  if (interactive) primeAudio();
   stopPoll();
   area.innerHTML = `<div class="waiting-card voter-loading">
     <div class="waiting-icon">⏳</div>
@@ -600,7 +597,7 @@ function startVoterSession(code, voterId, { interactive = false } = {}) {
 
   activeVoterCode = code;
   voterRefreshFromPush = () => refresh({ silent: true, force: true });
-  setupVoterPush(code, voterId, { interactive }).catch((e) => console.warn('Notificari:', e));
+  setupVoterPush(code, voterId).catch((e) => console.warn('Notificari:', e));
   refresh();
   stopPoll();
   pollTimer = setInterval(() => refresh({ silent: true }), VOTER_POLL_MS);
@@ -617,12 +614,6 @@ function pushSupported() {
 function isIOSDevice() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-}
-
-function browserNeedsNotificationGesture() {
-  const ua = navigator.userAgent || '';
-  const safariDesktop = /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|OPiOS|Android/i.test(ua);
-  return isIOSDevice() || safariDesktop;
 }
 
 function requestPushPermission() {
@@ -671,38 +662,130 @@ async function ensureVoterPush(code, voterId) {
   }
 }
 
-function askPermissionOnNextGesture(code, voterId) {
-  let done = false;
-  const ask = async () => {
-    if (done) return;
-    done = true;
-    document.removeEventListener('pointerdown', ask, true);
-    document.removeEventListener('keydown', ask, true);
-    if (activeVoterCode !== code) return;
-    const permission = await requestPushPermission();
-    if (permission === 'granted') await ensureVoterPush(code, voterId);
-  };
-  document.addEventListener('pointerdown', ask, true);
-  document.addEventListener('keydown', ask, true);
+// ---------- Fereastra de acord din site ----------
+// Votantul află întâi la ce sunt notificările (fereastra din site), iar
+// fereastra browserului pentru permisiune apare doar la apăsarea „Da”.
+let pushConsentContext = null;
+
+function openPushModal({ title, text, ask }) {
+  const modal = $('#pushConsentModal');
+  if (!modal) { toast(text || title); return; }
+  $('#pushConsentIcon').textContent = ask ? '🔔' : 'ℹ️';
+  $('#pushConsentTitle').textContent = title;
+  $('#pushConsentText').textContent = text;
+  $('#pushConsentActions').hidden = !ask;
+  $('#pushConsentOkRow').hidden = !!ask;
+  modal.hidden = false;
+  modal.style.display = 'flex';
 }
 
-async function setupVoterPush(code, voterId, { interactive = false } = {}) {
-  if (!pushSupported()) return;
+function closePushModal() {
+  const modal = $('#pushConsentModal');
+  if (!modal) return;
+  modal.hidden = true;
+  modal.style.display = 'none';
+}
+
+// Întrebăm o singură dată per sesiune de browser, ca să nu deranjăm la fiecare cod.
+function pushDialogAllowed() {
+  try {
+    if (sessionStorage.getItem('cabanavot.push.asked') === '1') return false;
+    sessionStorage.setItem('cabanavot.push.asked', '1');
+    return true;
+  } catch {
+    return true; // Safari privat blochează sessionStorage: întreabăm tot
+  }
+}
+
+function showPushConsentDialog(code, voterId) {
+  if (!pushDialogAllowed()) return;
+  pushConsentContext = { code, voterId };
+  openPushModal({
+    ask: true,
+    title: 'Vrei să fii anunțat la întrebări noi?',
+    text: 'Primești sunet și vibrație pe telefon de fiecare dată când administratorul aduce o întrebare nouă, inclusiv când te uiți la altceva pe telefon. Notificările sunt doar pentru sesiunea de vot.',
+  });
+}
+
+// Când browserul nu poate trimite notificări deloc (browserul din Facebook,
+// Instagram, WhatsApp sau iPhone fără aplicație instalată pe ecran).
+function showPushUnsupportedHint() {
+  if (!pushDialogAllowed()) return;
+  const iOS = isIOSDevice();
+  openPushModal({
+    ask: false,
+    title: iOS
+      ? 'Pe iPhone, notificările merg din aplicația de pe ecran'
+      : 'Notificările nu sunt disponibile în acest browser',
+    text: iOS
+      ? 'Safari pe iPhone nu poate trimite notificări dintr-un site simplu. Deschide site-ul în Safari și apasă butonul Partajează → „Adaugă pe ecranul Acasă”, apoi intră în vot din aplicația de pe ecran.'
+      : 'Aplicația din care ai deschis linkul (de obicei o rețea socială) nu suportă notificări pentru site-uri. Deschide site-ul în Chrome sau Safari și intră în vot de acolo.',
+  });
+}
+
+// Explained când permisiunea a fost cerută, dar nu a funcționat.
+function showPushNotWorkingHint() {
+  const iOS = isIOSDevice();
+  openPushModal({
+    ask: false,
+    title: iOS
+      ? 'Notificări: adaugă site-ul pe ecranul telefonului'
+      : 'Notificările nu au putut porni aici',
+    text: iOS
+      ? 'Pe iPhone, site-ul deschis simplu în Safari nu poate primi notificări. În Safari, apasă butonul Partajează (pătrat cu săgeată) → „Adaugă pe ecranul Acasă”, apoi intră în vot din aplicația nouă și dă din nou acordul pentru notificări.'
+      : 'Browserul nu a putut crea notificările aici. Dacă ai deschis linkul dintr-o altă aplicație sau ai rămas pe fundal, închide și redeschide site-ul în Chrome sau Safari, apoi intră în vot din nou.',
+  });
+}
+
+function showPushBlockedHint() {
+  openPushModal({
+    ask: false,
+    title: 'Notificările sunt blocate în setări',
+    text: 'Ai apăsat „Blochează” pentru acest site în trecut. Le poți activa din lacătul din bara de adrese sau din setările browserului, apoi reîntră în sesiunea de vot.',
+  });
+}
+
+async function handlePushConsentYes() {
+  const ctx = pushConsentContext;
+  pushConsentContext = null;
+  closePushModal();
+  if (!ctx) return;
+  let permission = 'default';
+  try {
+    permission = await withTimeout(requestPushPermission(), 9000, 'Browserul nu a răspuns la cererea de permisiune.');
+  } catch {}
+  if (permission === 'granted') {
+    const ok = await ensureVoterPush(ctx.code, ctx.voterId);
+    if (ok) {
+      toast('Notificările sunt active 🔔');
+      // Semnalul pe care îl va primi la fiecare întrebare nouă:
+      lastSoundAt = 0;
+      lastVibrationAt = 0;
+      playAlertSound();
+      vibrateStrong();
+      return;
+    }
+    showPushNotWorkingHint();
+    return;
+  }
+  if (permission === 'denied') {
+    showPushBlockedHint();
+    return;
+  }
+  showPushNotWorkingHint(); // browserul nu a întrebat aici (browser in-app / Safari pe iPhone)
+}
+
+async function setupVoterPush(code, voterId) {
+  if (!pushSupported()) {
+    showPushUnsupportedHint();
+    return;
+  }
   if (Notification.permission === 'granted') {
     await ensureVoterPush(code, voterId);
     return;
   }
   if (Notification.permission === 'denied') return;
-  if (interactive || !browserNeedsNotificationGesture()) {
-    const permission = await requestPushPermission();
-    if (permission === 'granted') {
-      await ensureVoterPush(code, voterId);
-      return;
-    }
-    if (permission === 'denied') return;
-  }
-  // Încă nu avem permisiune (sau browserul cere un gest): cerem la primul tap.
-  askPermissionOnNextGesture(code, voterId);
+  showPushConsentDialog(code, voterId);
 }
 
 // ---------- Formular creare / editare ----------
@@ -1361,6 +1444,14 @@ if ($('#voterAlertAction')) $('#voterAlertAction').onclick = () => {
   if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   else window.scrollTo({ top: 0, behavior: 'smooth' });
 };
+if ($('#pushConsentNo')) $('#pushConsentNo').onclick = () => { pushConsentContext = null; closePushModal(); };
+if ($('#pushConsentOk')) $('#pushConsentOk').onclick = () => { pushConsentContext = null; closePushModal(); };
+if ($('#pushConsentYes')) $('#pushConsentYes').onclick = handlePushConsentYes;
+if ($('#pushConsentModal')) $('#pushConsentModal').addEventListener('click', (e) => {
+  // Fereastra de acord (cu întrebarea Da/Nu) nu se închide atingând fundalul;
+  // doar mesajele informative (fără întrebare) se închid așa.
+  if (e.target === e.currentTarget && !pushConsentContext) closePushModal();
+});
 
 refreshHeader();
 closeLoginModal(); // plasă de siguranță: modalurile pornesc închise chiar dacă CSS-ul e încă în cache

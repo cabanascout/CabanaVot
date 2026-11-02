@@ -255,6 +255,18 @@ body.dragging-active{cursor:grabbing;user-select:none}
   .voter-alert-copy strong{font-size:.95rem}
   .voter-alert-copy p{font-size:.84rem}
 }
+/* Fereastra de acord pentru notificări (înainte de pop-up-ul browserului). */
+.push-consent-modal{max-width:430px;text-align:center;border-top:5px solid var(--albastru);padding:26px 24px 22px;animation:confirm-pop .18s ease-out}
+.push-consent-icon{width:62px;height:62px;margin:0 auto 14px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#EAF7FF,#F4EEDA);border:2px solid rgba(0,153,255,.25);font-size:1.65rem}
+.push-consent-modal h2{margin:0 0 8px;color:var(--mov);font-size:1.35rem}
+.push-consent-text{margin:0 auto;max-width:360px;color:var(--muted);font-size:.95rem;line-height:1.5}
+.push-consent-actions{justify-content:center;margin-top:16px;gap:10px}
+.push-consent-actions .btn{flex:1 1 auto}
+
+@media(max-width:520px){
+  .push-consent-actions{flex-direction:column}
+}
+
 .control-notify{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 .control-notify .tiny{max-width:620px;line-height:1.35}
 .pulse-dot{width:7px;height:7px;border-radius:50%;background:var(--albastru);box-shadow:0 0 0 0 rgba(0,153,255,.35);animation:voter-pulse 1.8s ease-out infinite;flex:0 0 auto}
