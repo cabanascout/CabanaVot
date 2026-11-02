@@ -97,7 +97,7 @@ function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return Promise.resolve(null);
   if (!swRegistrationPromise) {
     swRegistrationPromise = navigator.serviceWorker
-      .register('/sw.js?v=46', { scope: '/', updateViaCache: 'none' })
+      .register('/sw.js?v=47', { scope: '/', updateViaCache: 'none' })
       .catch((e) => { console.warn('Service worker indisponibil:', e); return null; });
   }
   return swRegistrationPromise;
@@ -1356,9 +1356,8 @@ async function renderControl(id) {
           // arătăm niciun mesaj despre asta — nu e nimic de trimis.
         } else if (r.eligible > 0) {
           toast(`Notificarea NU a putut fi trimisă${detalii.length ? `: ${detalii.join(', ')}` : ''}. Încearcă din nou.`);
-        } else {
-          toast('Niciun votant care nu a votat are notificările activate (adresa de acord apare la intrarea în sesiune).');
         }
+        // Dacă nu are nimeni notificările activate, nu afișăm niciun mesaj.
       } catch (e) {
         toast(e.message);
       } finally {
