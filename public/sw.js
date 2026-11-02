@@ -1,5 +1,5 @@
 /* CabanaVot — service worker pentru notificări push.
-   Rulează pe același domeniu ca site-ul (Netlify sau Cloudflare Workers). */
+   Rulează pe același domeniu ca site-ul (Cloudflare Workers). */
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));

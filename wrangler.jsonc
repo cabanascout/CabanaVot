@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "cabanavot",
   "main": "worker/index.js",
+  "workers_dev": true,
   "compatibility_date": "2026-11-02",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
@@ -10,6 +11,12 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api", "/api/*"]
   },
+  "routes": [
+    {
+      "pattern": "vot.cabanascout.ro",
+      "custom_domain": true
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
