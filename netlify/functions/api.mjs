@@ -6,7 +6,18 @@ import { createBlobsStore } from '../../lib/blobs-store.mjs';
 
 const store = createBlobsStore('cabanavot');
 
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+  'access-control-allow-headers': 'content-type,x-auth-token,authorization',
+  'access-control-max-age': '86400',
+};
+
 export default async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   const url = new URL(req.url);
   let body = {};
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -29,6 +40,7 @@ export default async (req) => {
   return new Response(JSON.stringify(out.body), {
     status: out.status,
     headers: {
+      ...CORS_HEADERS,
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
     },

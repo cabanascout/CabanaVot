@@ -10,7 +10,8 @@
   "dependencies": {
     "@netlify/blobs": "^11.1.7",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "web-push": "^3.6.7"
   },
   "engines": {
     "node": ">=22.12.0"

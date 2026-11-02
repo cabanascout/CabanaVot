@@ -5,6 +5,16 @@ cu design după Manualul de identitate vizuală Cabana Scout v3.0
 (albastru `#0099FF`, bej `#D1C885`, mov închis `#000080`, font Red Hat Display,
 logo oficial extras din manual în `public/logo.png`).
 
+## Actualizări v2.7 (2 nov 2026) — notificări push și vibrare
+
+- 🔔 Votanții pot activa notificările o singură dată din pagina de vot, cu butonul **„Activează”**. Primesc notificare când apare o întrebare nouă, **chiar dacă site-ul este închis**.
+- 📳 Când se trece la altă întrebare, telefonul votantului vibrează puternic dacă pagina de vot este deschisă. Vibrarea este repetată, ca să se simtă.
+- 📣 Creatorul are în panoul **Controlează live** un buton subtil **„🔔 Notifică pe cei care nu au votat”**. Trimite un memento separat de notificarea automată, doar votanților cu notificări active care nu au răspuns la întrebarea curentă. Poate trimite **de câte ori vrea**.
+- 🔐 Cheile VAPID sunt generate automat și păstrate în baza de date a site-ului; cheia privată nu este pusă în Git și nu ajunge în browser.
+- ☁️ URL-ul Cloudflare (`cabanavot.cabana-a25.workers.dev`) servește frontend-ul static, iar API-ul rămâne pe Netlify; funcția Netlify acceptă acum cereri cross-origin (CORS), ca login-ul, votul și notificările să funcționeze și de acolo.
+- ⚠️ Pe iPhone, notificările web funcționează doar după ce site-ul este adăugat la **ecranul principal** (iOS 16.4+). Pe Android funcționează din browser. Notificările trebuie activate o dată de fiecare votant; fără această activare, notificarea push nu poate fi livrată când site-ul este închis.
+- 🚧 Mentenanța a fost pornită cât timp s-a lucrat la această versiune, apoi oprită după verificarea pe Netlify și Cloudflare.
+
 ## Actualizări v2.6 (29 oct 2026) — API stabil după expirarea tokenului Blobs
 
 - 🔧 Conexiunea la **Netlify Blobs** este recreată la fiecare citire/scriere, nu păstrată în memoria funcției. Astfel, tokenul reîmprospătat de Netlify este folosit imediat, iar API-ul nu mai cade cu eroarea „Token expired” după ce funcția rămâne pornită mai mult timp.
@@ -164,14 +174,14 @@ logo oficial extras din manual în `public/logo.png`).
 
 Gândește-te la aplicație ca la o cabană cu mai multe părți:
 
-1. **`public/` = partea vizibilă (frontend)** — ce vede lumea în browser: `index.html` (scheletul), `styles.css` (culorile frumoase), `app.js` (butoanele, votul live), `logo.png` (logo-ul oficial din manualul de identitate).
-2. **`lib/api.js` = creierul (logica API)** — ține minte utilizatorii, sesiunile și voturile, dă codurile, verifică că doar creatorul editează. Este scris o singură dată și folosit în ambele medii.
+1. **`public/` = partea vizibilă (frontend)** — ce vede lumea în browser: `index.html` (scheletul), `styles.css` (culorile frumoase), `app.js` (butoanele, votul live), `sw.js` (service worker-ul pentru notificări), `manifest.json` (instalare pe telefon), `logo.png` (logo-ul oficial din manualul de identitate).
+2. **`lib/api.js` = creierul (logica API)** — ține minte utilizatorii, sesiunile și voturile, dă codurile, verifică că doar creatorul editează, trimite notificările push. Este scris o singură dată și folosit în ambele medii.
 3. **`lib/file-store.js`** = salvarea locală, în **`db.json`** (pentru dezvoltare pe calculator).
 4. **`lib/blobs-store.mjs`** = salvarea în producție, în **Netlify Blobs** (cu scriere condiționată, ca să nu se piardă voturi).
 5. **`netlify/functions/api.mjs`** = API-ul serverless de pe Netlify (pornește doar la cereri).
 6. **`server.js`** = serverul local (Express) pentru `npm start`; folosește aceeași logică din `lib/api.js`.
 7. **`netlify.toml`** = îi spune Netlify ce să publice: folderul `public/` și funcția din `netlify/functions/`.
-8. **`package.json`** = lista de „unelte” necesare (Express + CORS local, `@netlify/blobs` în producție). E ca o listă de cumpărături pentru server.
+8. **`package.json`** = lista de „unelte” necesare (Express + CORS local, `@netlify/blobs` în producție, `web-push` pentru notificări). E ca o listă de cumpărături pentru server.
 
 De ce backend real și nu doar un fișier HTML?
 - Doar-HTML = votul ar funcționa doar pe laptopul tău. Telefoanele votanților n-ar putea trimite voturile la tine.

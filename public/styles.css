@@ -236,6 +236,12 @@ body.dragging-active{cursor:grabbing;user-select:none}
 .voter-top h2{margin:0;color:var(--mov);font-size:clamp(1.35rem,4vw,1.85rem);line-height:1.15;overflow-wrap:anywhere}
 .voter-code{display:inline-block;margin-top:7px;background:var(--bej-deschis);border:1.5px solid var(--bej);border-radius:999px;padding:4px 10px;font-size:.76rem;font-weight:900;letter-spacing:.13em;color:var(--mov)}
 .voter-auto{display:flex;align-items:center;justify-content:center;gap:7px;margin:14px 0 0;text-align:center}
+/* Notificările votantului: discret, dar vizibil înainte de prima întrebare. */
+.voter-push{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin:0 auto 14px;padding:8px 10px;background:rgba(255,255,255,.78);border:1px dashed rgba(0,0,128,.24);border-radius:12px;max-width:760px}
+.voter-push-note{font-size:.8rem;line-height:1.35;color:var(--muted);max-width:580px}
+.voter-push .btn{flex:0 0 auto}
+.control-notify{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.control-notify .tiny{max-width:620px;line-height:1.35}
 .pulse-dot{width:7px;height:7px;border-radius:50%;background:var(--albastru);box-shadow:0 0 0 0 rgba(0,153,255,.35);animation:voter-pulse 1.8s ease-out infinite;flex:0 0 auto}
 .pulse-dot.error{background:var(--danger);animation:none}
 @keyframes voter-pulse{0%{box-shadow:0 0 0 0 rgba(0,153,255,.30)}70%{box-shadow:0 0 0 8px rgba(0,153,255,0)}100%{box-shadow:0 0 0 0 rgba(0,153,255,0)}}

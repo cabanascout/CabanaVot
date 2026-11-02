@@ -1,0 +1,25 @@
+{
+  "name": "CabanaVot",
+  "short_name": "CabanaVot",
+  "description": "Platforma de vot anonim Cabana Scout",
+  "lang": "ro",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAF8EF",
+  "theme_color": "#000080",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "667x667",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "logo.png",
+      "sizes": "667x667",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

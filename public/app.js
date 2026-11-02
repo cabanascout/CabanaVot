@@ -1,12 +1,58 @@
 /* CabanaVot — frontend SPA (fara framework, ca sa fie usor de inteles) */
-const API = '';
+// Site-ul static poate rula pe Netlify sau pe Cloudflare Workers. API-ul rămâne
+// pe Netlify, așa că orice alt domeniu decât cel oficial/localhost îl cheamă absolut.
+const API = (() => {
+  const host = location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host === 'vot.cabanascout.ro') return '';
+  return 'https://vot.cabanascout.ro';
+})();
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
 let pollTimer = null;
 let confirmResolve = null;
 let confirmPreviousFocus = null;
+let voterRefreshFromPush = null;
+let activeVoterCode = '';
+let lastVibrationAt = 0;
+let swRegistrationPromise = null;
 
 function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return Promise.resolve(null);
+  if (!swRegistrationPromise) {
+    swRegistrationPromise = navigator.serviceWorker
+      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .catch((e) => { console.warn('Service worker indisponibil:', e); return null; });
+  }
+  return swRegistrationPromise;
+}
+
+function vibrateStrong() {
+  const now = Date.now();
+  if (now - lastVibrationAt < 1800) return; // push + poll pot veni aproape simultan
+  lastVibrationAt = now;
+  if (navigator.vibrate) {
+    try { navigator.vibrate([500, 150, 500, 150, 900]); } catch {}
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((ch) => ch.charCodeAt(0)));
+}
+
+function withTimeout(promise, ms, message) {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => { if (timer) clearTimeout(timer); });
+}
 
 // ---- identitati locale ----
 function getToken() { return localStorage.getItem('cabanavot_token') || ''; }
@@ -122,6 +168,8 @@ document.addEventListener('click', (e) => {
 
 function route() {
   stopPoll();
+  voterRefreshFromPush = null;
+  activeVoterCode = '';
   const h = location.hash || '#/';
   // Meniul mobil se inchide la fiecare schimbare de pagina.
   const nav = $('#mainNav');
@@ -228,6 +276,7 @@ function startVoterSession(code, voterId) {
       </div>
       <button type="button" class="btn btn-ghost btn-small" id="vChangeCode">Schimbă codul</button>
     </div>
+    <div class="voter-push" id="vPushBox" hidden></div>
     <div id="vStage">
       <div class="waiting-card voter-loading">
         <div class="waiting-icon">⏳</div>
@@ -335,11 +384,14 @@ function startVoterSession(code, voterId) {
   }
 
   function showQuestion(s) {
+    const isNewQuestion = (state.questionId && state.questionId !== s.current.id)
+      || state.status === 'draft' || state.status === 'waiting' || state.status === 'voted';
     state.status = 'live';
     state.questionId = s.current.id;
     state.questionSig = questionSignature(s.current);
     state.selected = null;
     stage.innerHTML = questionMarkup(s);
+    if (isNewQuestion) vibrateStrong();
     const submit = $('#vSubmit');
     const hint = $('#vHint');
     stage.querySelectorAll('.vote-btn').forEach((b) => {
@@ -449,9 +501,124 @@ function startVoterSession(code, voterId) {
     }
   }
 
+  activeVoterCode = code;
+  voterRefreshFromPush = () => refresh({ silent: true, force: true });
+  setupVoterPush(code, voterId).catch((e) => console.warn('Notificari:', e));
   refresh();
   stopPoll();
   pollTimer = setInterval(() => refresh({ silent: true }), VOTER_POLL_MS);
+}
+
+// ---------- Notificari pe ecranul votantului ----------
+async function setupVoterPush(code, voterId) {
+  const box = $('#vPushBox');
+  if (!box) return;
+  const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  if (!supported) {
+    if (isIOS) {
+      box.innerHTML = '<span class="voter-push-note">🔔 Pe iPhone, adaugă site-ul la ecranul principal ca să poți primi notificări.</span>';
+      box.hidden = false;
+    }
+    return;
+  }
+
+  async function getSubscription() {
+    try {
+      await registerServiceWorker();
+      const reg = await navigator.serviceWorker.ready;
+      return await reg.pushManager.getSubscription();
+    } catch {
+      return null;
+    }
+  }
+
+  async function saveSubscription(subscription) {
+    await api('/api/join/' + encodeURIComponent(code) + '/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ voterId, subscription: subscription.toJSON() }),
+    });
+  }
+
+  async function enablePush({ interactive = true } = {}) {
+    if (interactive) {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast('Notificările nu au fost activate.');
+        await paint();
+        return;
+      }
+    }
+    await registerServiceWorker();
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const { publicKey } = await api('/api/push/public-key');
+      sub = await withTimeout(
+        reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        }),
+        15000,
+        'Browserul nu a putut crea abonamentul pentru notificări. Încearcă din nou.',
+      );
+    }
+    await saveSubscription(sub);
+    if (interactive) {
+      vibrateStrong();
+      toast('Notificări activate 🔔');
+    }
+    await paint();
+  }
+
+  async function disablePush() {
+    const reg = await registerServiceWorker();
+    const subscription = reg ? await reg.pushManager.getSubscription() : null;
+    if (subscription) {
+      const endpoint = subscription.endpoint;
+      try { await subscription.unsubscribe(); } catch {}
+      try {
+        await api('/api/join/' + encodeURIComponent(code) + '/unsubscribe', {
+          method: 'POST',
+          body: JSON.stringify({ endpoint }),
+        });
+      } catch {}
+    }
+    toast('Notificările au fost oprite.');
+    await paint();
+  }
+
+  async function paint() {
+    const sub = await getSubscription();
+    if (Notification.permission === 'granted' && sub) {
+      // Dacă e deja abonat, îl înregistrăm și pentru sesiunea curentă (alt cod).
+      try { await saveSubscription(sub); } catch {}
+      box.innerHTML = '<span class="voter-push-note">🔔 Notificări active</span><button type="button" class="btn btn-subtle btn-small" id="vPushOff">Oprește</button>';
+      box.hidden = false;
+      const off = $('#vPushOff');
+      if (off) off.onclick = disablePush;
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      box.innerHTML = '<span class="voter-push-note muted">🔕 Notificările sunt blocate din setările browserului.</span>';
+      box.hidden = false;
+      return;
+    }
+    box.innerHTML = '<span class="voter-push-note">🔔 Activează notificările ca să te anunțăm când apare o întrebare nouă, chiar dacă ai închis site-ul.</span><button type="button" class="btn btn-subtle btn-small" id="vPushOn">Activează</button>';
+    box.hidden = false;
+    const on = $('#vPushOn');
+    if (on) on.onclick = async () => {
+      on.disabled = true;
+      try { await enablePush(); }
+      catch (e) { toast(e.message || 'Nu am putut activa notificările.'); await paint(); }
+    };
+  }
+
+  // Dacă permisiunea e deja acordată, dar abonamentul lipsește, nu forțăm
+  // subscribe la încărcare (poate bloca pagina); îi arătăm butonul.
+  await paint();
 }
 
 // ---------- Formular creare / editare ----------
@@ -831,6 +998,7 @@ async function renderControl(id) {
   }
 
   let lastIndex = s.currentIndex; // ca sa stim cand se schimba intrebarea curenta
+  let notifying = false;
   function paint() {
     // Pastram intrebarile extinse de administrator intre reimprospatarile automate.
     // (Altfel, la fiecare 2.5 secunde toate <details> se inchideau si pagina "sarea" la loc.)
@@ -844,6 +1012,7 @@ async function renderControl(id) {
 
     const cur = s.currentIndex >= 0 ? s.questions[s.currentIndex] : null;
     const isLast = s.questions.length > 0 && s.currentIndex === s.questions.length - 1;
+    const pushPending = Number(s.pushPending || 0);
     app.innerHTML = `
     <section>
       <div class="row"><a href="#/sesiunile-mele" data-nav>← Sesiuni active</a></div>
@@ -877,6 +1046,10 @@ async function renderControl(id) {
               ${s.status === 'live' ? `<button class="btn btn-ghost btn-small" id="cPrev">← Precedenta</button>${isLast ? '' : '<button class="btn btn-primary btn-small" id="cNext">Următoarea →</button>'}<button class="btn btn-danger btn-small" id="cClose">■ Închide sesiunea</button>` : ''}
               <a class="btn btn-ghost btn-small" href="#/editeaza/${s.id}" data-nav>Editează întrebări</a>
             </div>
+            ${isOwner && s.status === 'live' && cur ? `<div class="control-notify">
+              <button type="button" class="btn btn-subtle btn-small" id="cNotify" title="Trimite o notificare votanților care nu au răspuns la întrebarea curentă" ${notifying ? 'disabled' : ''}>${notifying ? 'Se trimite…' : '🔔 Notifică pe cei care nu au votat'}</button>
+              <span class="tiny muted">${pushPending ? `${pushPending} votant${pushPending === 1 ? '' : 'i'} cu notificări active nu au răspuns încă.` : 'Doar cei cu notificările activate primesc notificarea.'}</span>
+            </div>` : ''}
           </div>
           ${!isOwner ? '<p class="tiny muted">Vezi acest panou pentru că ești pe linkul de admin. Doar creatorul (' + esc(s.ownerEmail) + ') poate controla efectiv sesiunea.</p>' : ''}
         </div>
@@ -900,6 +1073,26 @@ async function renderControl(id) {
       });
       if (!ok) return;
       ctl({ action: 'close' });
+    };
+    if ($('#cNotify')) $('#cNotify').onclick = async () => {
+      if (notifying) return;
+      notifying = true;
+      paint();
+      try {
+        const r = await api('/api/sessions/' + id + '/notify', { method: 'POST', body: JSON.stringify({}) });
+        if (r.sentVoters > 0) {
+          toast(`Notificare trimisă la ${r.sentVoters} votant${r.sentVoters === 1 ? '' : 'i'}${r.failed ? ` (${r.failed} dispozitive au eșuat)` : ''}.`);
+        } else if (r.eligible > 0) {
+          toast('Notificarea nu a putut fi trimisă. Încearcă din nou.');
+        } else {
+          toast('Niciun votant cu notificările activate nu așteaptă un răspuns.');
+        }
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        notifying = false;
+        paint();
+      }
     };
     app.querySelectorAll('[data-goto]').forEach((b) => (b.onclick = () => ctl({ action: 'goto', index: Number(b.dataset.goto) })));
     // cele doua butoane discrete: extinde / colapseaza toate intrebarile
@@ -1038,6 +1231,21 @@ $('#hamburger').onclick = () => $('#mainNav').classList.toggle('open');
 document.addEventListener('wheel', (e) => {
   if (e.target instanceof HTMLInputElement && e.target.type === 'number') e.target.blur();
 }, { passive: true });
+
+// Mesajele venite prin service worker (push) declanșează vibrarea și, dacă
+// suntem pe ecranul de vot, o reîmprospătare imediată a întrebării.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const data = event.data || {};
+    if (data.type === 'cabanavot-open' && data.url) { location.href = data.url; return; }
+    if (data.type !== 'cabanavot-push') return;
+    if (!activeVoterCode) return;
+    if (data.sessionCode && String(data.sessionCode).toUpperCase() !== activeVoterCode) return;
+    vibrateStrong();
+    if (typeof voterRefreshFromPush === 'function') voterRefreshFromPush();
+  });
+}
+registerServiceWorker();
 
 refreshHeader();
 closeLoginModal(); // plasă de siguranță: modalurile pornesc închise chiar dacă CSS-ul e încă în cache
