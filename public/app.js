@@ -44,10 +44,21 @@ async function writeVoterPresence(visible) {
 function startVoterPresence() {
   voterPresenceOn = true;
   writeVoterPresence(document.visibilityState === 'visible');
+  closeSystemNotifications();
   clearInterval(voterPresenceTimer);
   voterPresenceTimer = setInterval(() => {
     writeVoterPresence(document.visibilityState === 'visible');
   }, 8000);
+}
+
+// Cât timp utilizatorul se uită la site, nu are rost să rămână notificări de
+// sistem în bara telefonului — le închidem (pop-up-ul din site rămâne).
+function closeSystemNotifications() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.getRegistration()
+    .then((r) => r && r.getNotifications())
+    .then((list) => { if (list) list.forEach((n) => { try { n.close(); } catch {} }); })
+    .catch(() => {});
 }
 
 function stopVoterPresence() {
@@ -1502,7 +1513,9 @@ document.addEventListener('keydown', primeAudio);
 // dispare imediat, ca notificarea de sistem să apară normal.
 document.addEventListener('visibilitychange', () => {
   if (!voterPresenceOn) return;
-  writeVoterPresence(document.visibilityState === 'visible');
+  const visible = document.visibilityState === 'visible';
+  writeVoterPresence(visible);
+  if (visible) closeSystemNotifications();
 });
 if ($('#voterAlertClose')) $('#voterAlertClose').onclick = hideVoterAlert;
 if ($('#voterAlertAction')) $('#voterAlertAction').onclick = () => {

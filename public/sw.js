@@ -69,19 +69,16 @@ self.addEventListener('push', (event) => {
       } catch {}
     }
 
-    // Notificarea de sistem nu mai apare dacă votantul vede chiar pagina de vot.
-    // Pop-up-ul din site preia mesajul. Dacă pagina e deschisă în fundal / pe
-    // altă aplicație, notificarea de sistem apare normal.
-    const voterPageVisible = clients.some((client) => {
-      if (client.visibilityState !== 'visible') return false;
-      if (!client.url.includes('#/voteaza')) return false;
-      // Tab de vot fără cod în adresă (ecranul de introducere): suprimăm mereu.
-      if (!client.url.toUpperCase().includes('COD=')) return true;
-      if (!sessionCode) return true;
-      return client.url.toUpperCase().includes('COD=' + sessionCode);
-    }) || await voterVisibleRecently(sessionCode);
-    if (voterPageVisible) {
-      await self.registration.getNotifications({ tag: options.tag }).then((existing) => {
+    // Notificarea de sistem nu apare dacă utilizatorul are site-ul deschis în
+    // față (pagina de vot sau panoul de admin). Mesajul merge doar prin
+    // pop-up-ul din site. Dacă aplicația e în fundal / pe altă aplicație,
+    // notificarea de sistem apare normal.
+    const appVisible = clients.some((client) => client.visibilityState === 'visible')
+      || await voterVisibleRecently(sessionCode);
+    if (appVisible) {
+      // Închidem TOATE notificările de sistem rămase (inclusiv cele vechi),
+      // ca să nu pară că a apărut una nouă cât timp utilizatorul e în site.
+      await self.registration.getNotifications().then((existing) => {
         existing.forEach((n) => { try { n.close(); } catch {} });
       });
       return;
