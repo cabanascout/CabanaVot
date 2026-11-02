@@ -5,6 +5,15 @@ cu design după Manualul de identitate vizuală Cabana Scout v3.0
 (albastru `#0099FF`, bej `#D1C885`, mov închis `#000080`, font Red Hat Display,
 logo oficial extras din manual în `public/logo.png`).
 
+## Actualizări v2.9 (2 nov 2026) — mutare completă pe Cloudflare
+
+- ☁️ **Tot site-ul rulează acum pe Cloudflare Workers**: fișierele statice din `public/`, API-ul din `lib/api.js` și baza de date **Cloudflare D1**. Netlify nu mai este folosit pentru site-ul public.
+- 🗄️ Datele stau într-un singur rând JSON în D1 (`app_state`), cu scriere condiționată de versiune, ca voturile simultane să nu se suprascrie. Migrarea `migrations/0001_init.sql` creează tabelul.
+- 🔔 Notificările push folosesc în continuare `web-push` pentru criptare și VAPID, dar trimiterea se face prin `fetch`, ca să funcționeze identic pe Workers.
+- 🌐 Domeniul public rămâne **https://vot.cabanascout.ro**, dar este legat direct la Worker-ul Cloudflare, nu la Netlify.
+- 🚧 În timpul migrării site-ul a arătat ecranul de mentenanță; la final a fost readus normal.
+- 🧹 Datele vechi din Netlify Blobs nu au fost migrate; baza D1 pornește curată, conform deciziei.
+
 ## Actualizări v2.8 (2 nov 2026) — notificări pop-up, sunet și vibrare
 
 - 🔔 Când apare o întrebare nouă sau creatorul trimite un memento, votantul vede un **pop-up mare în pagină**, cu sunet și vibrare. Notificarea de sistem rămâne pentru cazul în care site-ul este închis sau în fundal.
@@ -188,11 +197,13 @@ Gândește-te la aplicație ca la o cabană cu mai multe părți:
 1. **`public/` = partea vizibilă (frontend)** — ce vede lumea în browser: `index.html` (scheletul), `styles.css` (culorile frumoase), `app.js` (butoanele, votul live), `sw.js` (service worker-ul pentru notificări), `manifest.json` (instalare pe telefon), `logo.png` (logo-ul oficial din manualul de identitate).
 2. **`lib/api.js` = creierul (logica API)** — ține minte utilizatorii, sesiunile și voturile, dă codurile, verifică că doar creatorul editează, trimite notificările push. Este scris o singură dată și folosit în ambele medii.
 3. **`lib/file-store.js`** = salvarea locală, în **`db.json`** (pentru dezvoltare pe calculator).
-4. **`lib/blobs-store.mjs`** = salvarea în producție, în **Netlify Blobs** (cu scriere condiționată, ca să nu se piardă voturi).
-5. **`netlify/functions/api.mjs`** = API-ul serverless de pe Netlify (pornește doar la cereri).
-6. **`server.js`** = serverul local (Express) pentru `npm start`; folosește aceeași logică din `lib/api.js`.
-7. **`netlify.toml`** = îi spune Netlify ce să publice: folderul `public/` și funcția din `netlify/functions/`.
-8. **`package.json`** = lista de „unelte” necesare (Express + CORS local, `@netlify/blobs` în producție, `web-push` pentru notificări). E ca o listă de cumpărături pentru server.
+4. **`lib/d1-store.js`** = salvarea în producție, în **Cloudflare D1** (un rând JSON cu versiune, ca să nu se piardă voturi la scrieri simultane).
+5. **`worker/index.js`** = Worker-ul Cloudflare care servește `public/` și rutează `/api/*` către `lib/api.js`.
+6. **`migrations/0001_init.sql`** = creează tabelul `app_state` din D1.
+7. **`wrangler.jsonc`** = configurația Worker-ului: fișiere statice, binding-ul D1 și compatibilitatea Node.
+8. **`server.js`** = serverul local (Express) pentru `npm start`; folosește aceeași logică din `lib/api.js`.
+9. **`package.json`** = lista de „unelte” necesare (Express + CORS local, `web-push` pentru notificări). E ca o listă de cumpărături pentru server.
+10. **`lib/blobs-store.mjs`**, **`netlify/`** și **`netlify.toml`** = rămân doar ca arhivă a variantei vechi pe Netlify; nu mai sunt folosite de site-ul public.
 
 De ce backend real și nu doar un fișier HTML?
 - Doar-HTML = votul ar funcționa doar pe laptopul tău. Telefoanele votanților n-ar putea trimite voturile la tine.
@@ -210,43 +221,37 @@ npm start
 
 Deschide apoi http://localhost:3000
 
-## Cum o faci PUBLICĂ (s-o acceseze oricine) — Netlify (gratuit, fără „adormire")
+## Cum o faci PUBLICĂ (s-o acceseze oricine) — Cloudflare Workers
 
-Site-ul e deja legat la domeniul **https://vot.cabanascout.ro** (subdomeniu al `cabanascout.ro`),
-iar Netlify îl publică automat din repository-ul GitHub `cabanavot`.
+Site-ul este legat la domeniul **https://vot.cabanascout.ro** (subdomeniu al `cabanascout.ro`)
+și rulează integral pe **Cloudflare Workers + D1**.
 
 Cum funcționează (pe scurt):
-- **`public/`** e urcat pe CDN-ul Netlify — se încarcă repede, fără server care „adoarme".
-- **`netlify/functions/api.mjs`** este API-ul serverless: pornește doar când cineva face o cerere.
-- **Netlify Blobs** ține datele (utilizatori, sesiuni, voturi) — **persistă** între deploy-uri și reporniri.
+- **`public/`** este urcat pe rețeaua Cloudflare — se încarcă repede, fără server care „adoarme".
+- **`worker/index.js`** servește fișierele statice și API-ul `/api/*`.
+- **Cloudflare D1** ține datele (utilizatori, sesiuni, voturi, abonamente push) și **persistă** între deploy-uri.
 
-### Prima configurare (o singură dată, dacă refaci site-ul)
+### Comenzi de deploy
 
-1. Urcă folderul `CabanaVot` în repository-ul GitHub (păstrează structura folderelor).
-2. În Netlify: **Add new site → Import an existing project → GitHub → repository-ul `cabanavot`**.
-3. Setările sunt deja în `netlify.toml`: **Build command `npm install`**, **Publish directory `public`**, funcțiile în `netlify/functions`.
-4. Apasă **Deploy**. Netlify citește `netlify.toml` și publică `public/` + funcția API.
-5. La **Domain settings** adaugi domeniul `vot.cabanascout.ro` (CNAME către `<site>.netlify.app`). Certificatul SSL se emite automat.
+```bash
+npm install
+npx wrangler login
+npx wrangler d1 migrations apply cabanavot-db --remote
+npx wrangler deploy
+```
 
-> ℹ️ La primul deploy baza de date pornește **goală** (fișierul local `db.json` nu se urcă pe GitHub).
-> Nu e nimic de configurat: contul tău se recreează automat la prima intrare cu email + parolă,
-> iar istoricul începe de la zero. Datele de acum rămân doar pe calculatorul tău.
+Worker-ul public este disponibil la `https://cabanavot.cabana-a25.workers.dev`, iar domeniul
+`https://vot.cabanascout.ro` este atașat ca **Custom Domain** în Cloudflare.
 
 ### Cum publici o actualizare
 
-1. Intră pe GitHub în repository-ul `cabanavot` → **Add file → Upload files**.
-2. Trage fișierele modificate (păstrează structura folderelor!):
-   - `public/index.html`, `public/styles.css`, `public/app.js`
-   - `server.js`, `lib/api.js`, `lib/file-store.js`, `lib/blobs-store.mjs`, `netlify/functions/api.mjs`, `netlify.toml`, `package.json`, `package-lock.json`
-3. Apasă **Commit changes**. Netlify detectează commit-ul și redeploy-ază automat (~1 minut).
-4. Deschide site-ul cu un **refresh complet** (Ctrl+F5 pe Windows, sau închide/reia tab-ul pe telefon).
-   Fișierele au `?v=14` în nume, deci browserul ia imediat versiunea nouă.
+1. Modifici fișierele în folderul `CabanaVot`.
+2. Crești versiunea `?v=` din `public/index.html` (ca browserul să ia imediat fișierele noi).
+3. Faci commit + push pe GitHub; Cloudflare redeploy-ază automat din repository.
+4. Verifici `https://vot.cabanascout.ro` cu un refresh complet (Ctrl+F5 pe Windows).
 
-> ✅ **Datele NU se pierd la redeploy**: voturile stau în Netlify Blobs, nu pe discul serverului.
-> Poți face deploy liniștit și în timpul unui vot.
-
-> 🔁 Dacă vrei să schimbi ceva în configurare, o poți face și din Netlify → **Site configuration → Build & deploy**;
-> totuși `netlify.toml` din repository are prioritate, ca să fie totul versionat în Git.
+> ✅ **Datele NU se pierd la redeploy**: voturile stau în D1, nu pe discul Worker-ului.
+> Poți face deploy liniștit și în timpul unui vot, deși e recomandat să nu rulezi migrări în timpul votului.
 
 ## Fluxul de vot la un eveniment real
 
@@ -258,11 +263,13 @@ Cum funcționează (pe scurt):
 ## Limitări asumate (important să știi)
 
 - Loginul e **email + parolă** (parola e salvată ca hash scrypt, nu în clar; tokenul din browser se reînnoiește la fiecare login). Bună pentru cercetași; pentru voturi statutare critice, următorul pas ar fi verificarea emailului (link de confirmare).
-- Baza de date e un fișier `db.json` **doar local**; în producție datele stau în **Netlify Blobs** (cu scriere condiționată, ca să nu se piardă voturi când scriu mai mulți deodată). Fă backup din când în când dacă ții la istoric.
+- Baza de date e un fișier `db.json` **doar local**; în producție datele stau în **Cloudflare D1** (un rând JSON cu versiune, ca să nu se piardă voturi când scriu mai mulți deodată). Fă backup din când în când dacă ții la istoric.
 - Votul dublu e prevenit per browser (id anonim). Dacă cineva votează de pe 2 telefoane, contează dublu — ca la voxvote în varianta simplă. Pentru protecție avansată (listă nominală de alegători), trebuie modulul „alegători invitați".
 
 ## Comenzi utile
 
 - `npm start` — pornește serverul local (http://localhost:3000)
+- `npm run deploy` — publică Worker-ul pe Cloudflare
+- `npm run db:migrate` — aplică migrările D1 în producție
 - fișierul `db.json` apare automat la prima pornire locală — nu-l șterge dacă vrei să păstrezi istoricul de pe calculator
-- în producție datele sunt în **Netlify Blobs** (nu în `db.json`), deci nu se pierd la redeploy
+- în producție datele sunt în **Cloudflare D1** (nu în `db.json`), deci nu se pierd la redeploy

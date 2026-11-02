@@ -2,6 +2,7 @@ node_modules/
 db.json
 .netlify/
 .env
+.wrangler/
 
 # fisiere locale (nu fac parte din site)
 Idetitate_vizuala_v3Copy.pdf

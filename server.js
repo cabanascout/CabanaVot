@@ -1,6 +1,6 @@
 // CabanaVot — server pentru dezvoltare locala
 // Ruleaza cu: npm install && npm start
-// Productia ruleaza pe Netlify (netlify/functions/api.mjs + Netlify Blobs).
+// Productia ruleaza pe Cloudflare Workers (worker/index.js + Cloudflare D1).
 // Logica API este scrisa o singura data, in lib/api.js, si folosita de ambele.
 
 import express from 'express';

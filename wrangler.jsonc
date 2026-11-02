@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cabanavot",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-11-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cabanavot-db",
+      "database_id": "15258d15-d70c-4198-bcda-8a91cbc819e4"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

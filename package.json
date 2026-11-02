@@ -1,11 +1,13 @@
 {
   "name": "cabanavot",
   "version": "1.0.0",
-  "description": "CabanaVot — platforma de vot Cabana Scout. Frontend static + API serverless pe Netlify.",
+  "description": "CabanaVot — platforma de vot Cabana Scout. Frontend + API + D1 pe Cloudflare Workers.",
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply cabanavot-db --remote"
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.7",

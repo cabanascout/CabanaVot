@@ -1,11 +1,7 @@
 /* CabanaVot — frontend SPA (fara framework, ca sa fie usor de inteles) */
-// Site-ul static poate rula pe Netlify sau pe Cloudflare Workers. API-ul rămâne
-// pe Netlify, așa că orice alt domeniu decât cel oficial/localhost îl cheamă absolut.
-const API = (() => {
-  const host = location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1' || host === 'vot.cabanascout.ro') return '';
-  return 'https://vot.cabanascout.ro';
-})();
+// Site-ul și API-ul rulează pe același Worker Cloudflare, deci API-ul este
+// întotdeauna pe același domeniu (inclusiv pe workers.dev și localhost).
+const API = '';
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
 let pollTimer = null;
