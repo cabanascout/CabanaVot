@@ -49,8 +49,17 @@ self.addEventListener('push', (event) => {
       } catch {}
     }
 
-    // Notificarea ajunge și dacă votantul are pagina de vot deschisă. Astfel
-    // telefonul vibrează și din notificarea de sistem, nu doar din pop-up-ul din site.
+    // Notificarea de sistem nu mai apare dacă votantul vede chiar pagina de vot.
+    // Pop-up-ul din site preia mesajul. Dacă pagina e deschisă în fundal / pe
+    // altă aplicație, notificarea de sistem apare normal.
+    const voterPageVisible = clients.some((client) => {
+      if (client.visibilityState !== 'visible') return false;
+      if (!client.url.includes('#/voteaza')) return false;
+      if (!sessionCode) return true;
+      return client.url.toUpperCase().includes('COD=' + sessionCode);
+    });
+    if (voterPageVisible) return;
+
     await self.registration.showNotification(title, options);
   })());
 });
