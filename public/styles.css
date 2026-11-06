@@ -99,6 +99,12 @@ a{color:var(--mov)}
    Textul prea lung se taie cu „…" ca sa nu rupa pagina pe telefon. */
 .user-badge{background:var(--bej-deschis);border:1.5px solid var(--bej);padding:7px 12px;border-radius:999px;font:inherit;font-weight:700;font-size:.85rem;cursor:pointer;max-width:min(340px,62vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:border-color .14s ease,transform .14s ease}
 .user-badge:hover{border-color:var(--mov);transform:scale(1.03)}
+/* Marcatorul „Neconectat" din colțul din dreapta: contur întrerupt, gri discret,
+   ca diferența de la conectat (fără niciun email afișat) să fie evidentă. */
+.user-badge.guest{background:#fff;border-style:dashed;border-color:#c7c7d4;color:var(--muted)}
+/* Atrag atenția coltului când se apasă „Creează vot" fără să fii conectat. */
+.user-badge.attention{animation:badge-shake .5s ease-in-out 3}
+@keyframes badge-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
 .hamburger{display:none;border:1px solid #ddd;background:#fff;border-radius:10px;padding:8px 11px;font-size:1.1rem;cursor:pointer;transition:background-color .14s ease,border-color .14s ease,color .14s ease,transform .14s ease}
 .hamburger:hover{background:var(--bej-deschis);border-color:var(--mov);color:var(--mov);transform:scale(1.05)}
 

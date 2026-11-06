@@ -210,12 +210,67 @@ function withTimeout(promise, ms, message) {
 }
 
 // ---- identitati locale ----
+// IMPORTANT: localStorage poate pastra date vechi (de ex. tokenul a expirat pe
+// server intre timp — la un login de pe alt dispozitiv tokenul vechi este
+// invalidat — sau baza site-ului a fost resetata). Ca sa nu aratam NICIODATA
+// un email in coltul din dreapta cand, de fapt, NU esti conectat, afisam si
+// permitem actiunile doar pentru starea actualizata (confirmata de server prin
+// /api/me). Pana la confirmare coltul arata „Neconectat", nu un email.
+let authUser = null;       // { id, email, name } doar daca serverul a confirmat sesiunea
+let authVerifyPromise = null;
+
 function getToken() { return localStorage.getItem('cabanavot_token') || ''; }
-function getUser() { try { return JSON.parse(localStorage.getItem('cabanavot_user') || 'null'); } catch { return null; } }
+function getUser() { return authUser; }
 function getVoterId() {
   let v = localStorage.getItem('cabanavot_voter');
   if (!v) { v = 'v_' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('cabanavot_voter', v); }
   return v;
+}
+
+// Aplica starea de conectare confirmata de server. Intoarce true daca starea
+// s-a schimbat (apelantul poate re-randa pagina).
+function applyAuth(user) {
+  const before = !!authUser;
+  if (user) {
+    authUser = user;
+    refreshHeader();
+  } else if (before) {
+    logoutLocal(); // curata tokenul vechi si reface headerul
+  } else {
+    refreshHeader();
+  }
+  return before !== !!authUser;
+}
+
+// Verifica sesiunea cu serverul (GET /api/me). Rezolva (resolve) `true` daca
+// starea de conectare s-a schimbat.
+function verifyAuth() {
+  const token = getToken();
+  if (!token) {
+    if (localStorage.getItem('cabanavot_user')) logoutLocal(); // curatam resturile vechi din cache
+    return Promise.resolve(applyAuth(null));
+  }
+  if (!authVerifyPromise) {
+    authVerifyPromise = api('/api/me')
+      .then((me) => ({ ok: true, me }))
+      .catch((e) => ({ ok: false, status: e && e.status }))
+      .finally(() => { authVerifyPromise = null; });
+  }
+  return authVerifyPromise.then((r) => {
+    // Daca intre timp starea s-a schimbat (login/logout nou), nu o suprascriem.
+    if (getToken() !== token) return false;
+    if (r.ok) return applyAuth(r.me || null);
+    if (r.status === 401) {
+      // Sesiunea a expirat / nu mai exista pe server: curatam tokenul si starea
+      // macar am fi fost sau nu conectati in pagina (dupa o re-improspatare
+      // nu exista inca nicio stare in pagina, dar tokenul era vechi).
+      const before = !!authUser;
+      logoutLocal();
+      return before;
+    }
+    refreshHeader(); // eroare de retea: NU deconectam pe nedrept (poate fi temporara)
+    return false;
+  });
 }
 
 async function api(path, opts = {}) {
@@ -224,7 +279,11 @@ async function api(path, opts = {}) {
   if (t) headers['x-auth-token'] = t;
   const res = await fetch(API + path, Object.assign({}, opts, { headers }));
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Eroare de retea');
+  if (!res.ok) {
+    const err = new Error(data.error || 'Eroare de retea');
+    err.status = res.status; // util ca sa deosebim sesiunea expirata (401) de o eroare de retea
+    throw err;
+  }
   return data;
 }
 
@@ -354,11 +413,27 @@ function renderHome() {
     <div class="hero-card">
       <h1>Vot anonim</h1>
       <div class="hero-cta">
-        <a class="btn btn-bej" href="#/creeaza" data-nav>+ Creează vot</a>
+        <a class="btn btn-bej" href="#/creeaza" data-nav id="createVoteBtn">+ Creează vot</a>
         <a class="btn btn-ghost" href="#/voteaza" data-nav>Votează cu cod</a>
       </div>
     </div>
   </section>`;
+  // Dacă NU ești conectat cu un email, „Creează vot" nu te lasă să începi:
+  // confirmăm acum sesiunea cu serverul, apoi fie intrăm pe formular (dacă ai
+  // fost confirmat), fie rămânem pe pagină cu un mesaj de eroare clar.
+  $('#createVoteBtn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!getUser()) await verifyAuth(); // doar daca starea locala nu e confirmata inca
+    if (getUser()) { location.hash = '#/creeaza'; return; }
+    const badge = $('#userBadge');
+    if (badge) {
+      badge.classList.remove('attention');
+      void badge.offsetWidth;
+      badge.classList.add('attention'); // atragem atentia coltului din dreapta
+    }
+    toast('Nu ești conectat cu un email — apasă „Intră cu email” din colțul din dreapta sus ca să creezi un vot.');
+  });
 }
 
 // ---------- Pagina de pornire (prima pagina dupa login — doar prima data) ----------
@@ -1083,7 +1158,7 @@ function wireForm(areaId, onReorder) {
 async function renderCreate() {
   const user = getUser();
   if (!user) {
-    app.innerHTML = `<section class="card"><h2>Creează vot</h2><p>Ca să creezi un vot trebuie să fii logat cu adresa de email — așa salvăm istoricul pe contul tău. Durează 10 secunde.</p><button class="btn btn-primary" onclick="document.querySelector('#loginBtn').click()">Intră cu email</button></section>`;
+    app.innerHTML = `<section class="card"><h2>Creează vot</h2><p><strong>Nu ești conectat.</strong> Ca să creezi un vot trebuie să fii logat cu adresa de email — așa salvăm istoricul pe contul tău. Durează 10 secunde.</p><button class="btn btn-primary" onclick="document.querySelector('#loginBtn').click()">Intră cu email</button></section>`;
     return;
   }
   app.innerHTML = `
@@ -1380,10 +1455,17 @@ async function renderControl(id) {
 function refreshHeader() {
   const u = getUser();
   const badge = $('#userBadge');
-  badge.hidden = !u;
+  // Coltul din dreapta spune mereu CLAR daca esti conectat sau nu. Adresa de
+  // email apare DOAR cand sesiunea a fost confirmata de server; cand nu esti
+  // conectat se arata marcatorul „Neconectat" — niciodata un email.
+  badge.hidden = false;
+  badge.classList.toggle('guest', !u);
   if (u) {
     badge.innerHTML = `👤 ${esc(u.email)}`;
     badge.title = 'Contul meu';
+  } else {
+    badge.textContent = '👤 Neconectat';
+    badge.title = 'Nu ești conectat cu un email — apasă pentru a intra';
   }
   // Butonul "Intră cu email" se vede doar cand NU esti logat.
   // ("Ieși" a fost scos — deconectarea se face din fereastra Contul meu.)
@@ -1405,9 +1487,10 @@ function closeLoginModal() {
 }
 
 // Fereastra "Contul meu" — apare cand apesi pe numele/emailul din bara de sus.
+// Dacă nu ești conectat, apăsarea pe marcatorul „Neconectat" deschide intrarea.
 function openAccountModal() {
   const u = getUser();
-  if (!u) return;
+  if (!u) { openLoginModal(); return; }
   $('#accEmail').textContent = u.email || '—';
   const m = $('#accountModal');
   m.hidden = false; m.style.display = 'flex';
@@ -1446,7 +1529,8 @@ function closeConfirm(result) {
 
 function logoutLocal() {
   localStorage.removeItem('cabanavot_token');
-  localStorage.removeItem('cabanavot_user');
+  localStorage.removeItem('cabanavot_user'); // curățăm și resturile vechi din cache
+  authUser = null;
   refreshHeader();
 }
 
@@ -1484,7 +1568,7 @@ $('#doLogin').onclick = async () => {
   try {
     const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
     localStorage.setItem('cabanavot_token', r.token);
-    localStorage.setItem('cabanavot_user', JSON.stringify(r.user));
+    applyAuth(r.user); // sesiunea tocmai a fost confirmata chiar de server (login)
     closeLoginModal();
     refreshHeader();
     toast(r.created ? 'Cont creat! Bun venit!'
@@ -1574,3 +1658,19 @@ refreshHeader();
 closeLoginModal(); // plasă de siguranță: modalurile pornesc închise chiar dacă CSS-ul e încă în cache
 closeAccountModal();
 route();
+
+// La deschiderea site-ului confirmăm sesiunea cu serverul: dacă tokenul din
+// localStorage a expirat (ex: ai fost între timp logat de pe alt dispozitiv),
+// colțul din dreapta trece pe „Neconectat" — emailul NU se afișează deloc —
+// iar pagina se re-randează fără acces la ce e doar pentru conectați.
+// Re-randarea ocolește paginile interactive (vot în curs, formulare).
+verifyAuth().then((changed) => {
+  if (!changed) return;
+  const h = location.hash || '#/';
+  if (h.startsWith('#/voteaza') || h.startsWith('#/editeaza')) return; // nu întrerupem o sesiune/formular activ
+  route();
+});
+
+// Când rețeaua revine (ex: telefonul a fost fără internet), reverificăm sesiunea,
+// ca marcatorul din colț să nu rămână agățat într-o stare demodată.
+window.addEventListener('online', () => { verifyAuth(); });
